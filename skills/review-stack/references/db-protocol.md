@@ -20,9 +20,12 @@ shows "Answers cannot be saved in this view" and offers "Copy my answers").
 
 ## Stack page
 
-Collection `stack`, one doc per chantier (doc id = chantier id), written by agents only:
-`order` (integer, ascending), `title`, `url` (https), `summary`, `status` (`waiting`, `changes`,
-`hold`, `approved`, `merged`), `prs`, `decisions`, `added` (ISO date).
+| Path | Written by | Fields |
+|---|---|---|
+| `chantiers/<id>` | agents | `order` (int), `title`, `summary`, `status` (`building`, `ready`, `done`), optional `detail`, `links` (`[{label, url, note?}]`), `decisions` (`[{id, q, why?, options: [string], default}]`, the page adds "Other") |
+| `answers/<id>` | the page (or an agent mirroring a page verdict) | `verdict` (`approve`, `changes`, `later`, or empty), `notes`, `decisions` (`{<id>: {choice, other?}}`), `at` |
+
+Cards sort by state (ready, later, building, done/approved), then `order`.
 
 ## Why these choices
 - A doc per decision keeps writes small and lets two people answer different decisions at once.

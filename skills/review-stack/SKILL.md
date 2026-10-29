@@ -37,16 +37,21 @@ Files (paths relative to this skill's folder):
 7. Add the page to the stack (below), then report the link with a one-line summary.
 
 ## The stack
-One long-lived artifact lists every chantier page waiting for the owner.
-- Find it: the URL recorded in the project's notes (for example `PROGRESS.md` or the project's
-  docs), or `Artifact` `list` and look for "Review Stack". If none exists, create it:
-  `python3 scripts/render.py --stack -o <scratch>/stack.html`, publish with
-  `capabilities: {"db": {}}` and icon `stack`, then record its URL in the project's notes.
-- Add a row with `ArtifactData` `set`, collection `stack`, doc id = chantier id:
-  `{"order": <next integer>, "title": ..., "url": <page URL>, "summary": <one line>,
-  "status": "waiting", "prs": <count>, "decisions": <count>, "added": "<ISO date>"}`.
-- When a verdict comes in, update the row's `status` to `approved`, `changes` or `hold`; the
-  orchestrator sets `merged` after merging.
+One long-lived artifact lists every chantier waiting for the owner (for Arffornia: "Arffornia
+Review Stack"). Small chantiers can carry their decisions inline on the stack card instead of a
+page of their own.
+- Find it: the URL recorded in the project's notes, or `Artifact` `list` and look for
+  "Review Stack". If none exists: `python3 scripts/render.py --stack -o <scratch>/stack.html`,
+  publish with `capabilities: {"db": {}, "user": {}}` and icon `stack`, record its URL.
+- Add or update the card with `ArtifactData` (`set` when new, `update` with `if_version` when it
+  exists), collection `chantiers`, doc id = chantier id:
+  `{"order": <int>, "title": ..., "summary": <one line>, "status": "ready",
+  "links": [{"label": "Open the review page", "url": <page URL>}], "decisions": []}`.
+  Use `status: "building"` while work is in progress and `"done"` after the merge.
+- The stack writes `answers/<id>` (`verdict` approve/changes/later, `notes`, inline
+  `decisions`). When the verdict is given on the chantier's own page, mirror it there with
+  `ArtifactData` `set` `answers/<id>` `{"verdict": ..., "notes": "see the review page"}` so the
+  card shows it.
 
 ## Read the answers back
 `ArtifactData` `get` on `verdict/current`. When it exists and its `chantier` matches:
