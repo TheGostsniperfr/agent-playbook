@@ -1,0 +1,12 @@
+<script>
+window.__store={};
+(function(){
+ function snapDoc(path){var v=window.__store[path];return {id:path.split("/").pop(),exists:!!v,data:function(){return v}};}
+ var listeners=[];
+ var db={doc:function(p){return {set:function(d){window.__store[p]=JSON.parse(JSON.stringify(d));listeners.forEach(function(l){l()});return Promise.resolve()},
+   onSnapshot:function(cb){var f=function(){cb(snapDoc(p))};listeners.push(f);setTimeout(f,0);return function(){}}}},
+  collection:function(c){return {onSnapshot:function(cb){var f=function(){var docs=Object.keys(window.__store).filter(function(k){return k.indexOf(c+"/")===0}).map(snapDoc);cb({docs:docs,size:docs.length,empty:!docs.length})};listeners.push(f);setTimeout(f,0);return function(){}}}}};
+ window.__store["answers/force-with-lease"]={chantier:"agent-kit-v2",decision:"force-with-lease",choice:"block",text:"prior answer",at:"2026-10-29T10:00:00Z"};
+ window.claude={use:function(n){return Promise.resolve(n==="db"?db:n==="user"?{id:function(){return Promise.resolve("u-brian")}}:null)}};
+})();
+</script>

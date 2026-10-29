@@ -1,0 +1,23 @@
+# Sample project overlay: uses three base skills, inherits the org layer, patches one section.
+apiVersion: agentskills/v1
+base:
+  path: ../../..            # the agent-playbook checkout (tests); real projects use git + ref
+extends:
+  - path: ../org-layer
+    overlay: overlay/arffornia.yaml
+targets: [claude, codex, opencode]
+skills:
+  - name: review-stack
+    version: ^1.0
+    patches:
+      - append_section:
+          heading: "## Build the page"
+          text: "8. Also post the page link in the chantier's tracking issue."
+      - add_files:
+          references/project.md: .agents/overlay/review-stack/project.md
+  - name: overlay-apply
+    version: ~1.0
+    description: "Set up or update this repo's skills overlay and render it (sample project)."
+  - name: artifact-style
+local:
+  - path: .agents/skills-src/release-train

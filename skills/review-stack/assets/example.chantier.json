@@ -1,0 +1,55 @@
+{
+  "schema": "chantier/v1",
+  "id": "agent-kit-v2",
+  "title": "Agent Kit v2",
+  "accent": "v2",
+  "eyebrow": "Arffornia · agent-kit · chantier",
+  "summary": "The harness every Arffornia repo plugs into: session hooks, 23 skills, 6 subagents and two pilots. Approve it and the orchestrator merges the seven steps below in order.",
+  "date": "2026-10-29",
+  "stats": [
+    {"value": "7", "label": "hooks shipped by the plugin"},
+    {"value": "23", "label": "skills (6 upgraded, 17 new)"},
+    {"value": "82", "label": "offline hook tests, 0 failing"}
+  ],
+  "parts": [
+    {
+      "title": "Core harness",
+      "links": [{"label": "agent-kit #2", "url": "https://github.com/Arffornia/agent-kit/pull/2"}],
+      "bullets": ["The 7 hooks, packaged in the plugin.", "Templates, scripts/init, cloud setup, Codex skill sync."],
+      "proof": "82 offline cases; live run blocked a push to main."
+    }
+  ],
+  "merge": [
+    {"title": "agent-kit #2 · core harness", "url": "https://github.com/Arffornia/agent-kit/pull/2", "summary": "Hooks, templates, cloud setup, Codex sync, HARNESS.md.", "status": "ready"},
+    {"title": "agent-kit #3 · skills and subagents", "url": "https://github.com/Arffornia/agent-kit/pull/3", "summary": "Aligned with #2's formats; still a draft.", "status": "draft"},
+    {"title": "Install the Claude GitHub App", "summary": "Only on repos that adopt the workflow.", "status": "you"}
+  ],
+  "decisions": [
+    {
+      "id": "sandbox",
+      "title": "Sandbox on by default",
+      "context": "Agents run sandboxed with an allowlist of package registries.",
+      "options": [
+        {"id": "on", "label": "Keep it on", "detail": "Safer; a few installs need the allowlist."},
+        {"id": "opt-in", "label": "Opt-in per repo"}
+      ],
+      "default": "on",
+      "why": "Blocks exfiltration paths at no cost for normal work."
+    },
+    {
+      "id": "force-with-lease",
+      "title": "--force-with-lease on feature branches",
+      "context": "Plain --force and anything aimed at main stay blocked.",
+      "options": [{"id": "allow", "label": "Allow it"}, {"id": "block", "label": "Block it too"}],
+      "default": "allow"
+    }
+  ],
+  "verified": [
+    {"title": "Offline hooks", "detail": "82 cases, 0 failing."},
+    {"title": "Skill triggers", "detail": "34/34 evals pass."}
+  ],
+  "not_verified": [
+    {"title": "macOS", "detail": "Nothing ran on a Mac."}
+  ],
+  "footer": "Example data from the Agent Kit v2 chantier, 29 October 2026."
+}

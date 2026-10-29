@@ -1,0 +1,1570 @@
+#!/usr/bin/env python3
+"""agentskills: render generic Agent Skills plus project overlays for Claude Code, Codex and OpenCode.
+
+One base of generic skills (SKILL.md folders, semver in metadata.version, optional
+variants/<provider>[.<model>].md) is patched by overlay layers (an org layer, then the
+project's .agents/overlay.yaml) and rendered as real files into each tool's skills
+directory. Output is deterministic and recorded in a lockfile; `check` detects drift.
+
+Python 3.8+ standard library only. Works on Linux and macOS (arm64 and x86_64).
+Run `agentskills --help` or read skills/DESIGN.md in the agent-playbook repository.
+"""
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+VERSION = "1.0.0"
+API_VERSION = "agentskills/v1"
+DEFAULT_OVERLAY = ".agents/overlay.yaml"
+LOCK_NAME = "agentskills.lock"
+MARKER = ".agentskills-managed"
+PROVIDERS = ("claude", "codex", "opencode")
+# Project-level and user-level skills directories per tool.
+# Codex reads .agents/skills (repo) and ~/.agents/skills (user); ~/.codex/skills is legacy and is
+# NOT deduplicated against ~/.agents/skills, so we never write there.
+# OpenCode reads .claude/skills and .agents/skills too, but .opencode/skills overrides both by name,
+# so its own directory is where its variant goes.
+PROJECT_DIRS = {"claude": ".claude/skills", "codex": ".agents/skills", "opencode": ".opencode/skills"}
+USER_DIRS = {"claude": "~/.claude/skills", "codex": "~/.agents/skills", "opencode": "~/.config/opencode/skills"}
+# User-level installs must never share a name with a project's skill:
+# - Claude Code ranks personal skills above project skills, so a personal "review-stack" would
+#   silently hide a project's patched "review-stack". User-level skills therefore go into a
+#   personal plugin (~/.claude/skills/playbook/, loaded as "playbook@skills-dir"), which namespaces
+#   them as /playbook:<name>; a project with an overlay switches that plugin off in its
+#   .claude/settings.json (enabledPlugins), so only the project's own set is visible there.
+# - Codex lists same-name skills from ~/.agents/skills and .agents/skills side by side, and
+#   OpenCode 1.19 picks one of them at random on each start: user-level copies get a prefix.
+USER_PLUGIN = "playbook"
+USER_PREFIX = "playbook-"
+# Front-matter keys defined by the open Agent Skills spec (agentskills.io/specification).
+SPEC_KEYS = ("name", "description", "license", "compatibility", "metadata", "allowed-tools")
+# Files kept in the base for maintainers but never rendered into an agent's directory.
+STRIP_TOP = ("variants", "tests", "CHANGELOG.md")
+NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+class Error(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------------------------
+# Minimal YAML subset (block maps, block sequences, flow [..]/{..}, quoted and plain scalars,
+# | and > block scalars, comments). Enough for SKILL.md front matter and overlay files.
+# ---------------------------------------------------------------------------------------------
+
+def _strip_comment(s):
+    out, q, i = [], None, 0
+    while i < len(s):
+        c = s[i]
+        if q:
+            out.append(c)
+            if c == "\\" and q == '"' and i + 1 < len(s):
+                out.append(s[i + 1])
+                i += 1
+            elif c == q:
+                q = None
+        else:
+            if c in "\"'" and (not out or out[-1] in " \t[{,:" or "".join(out).strip() == ""):
+                q = c
+            elif c == "#" and (i == 0 or s[i - 1] in " \t"):
+                break
+            out.append(c)
+        i += 1
+    return "".join(out).rstrip()
+
+
+def _scalar(tok):
+    t = tok.strip()
+    if t == "":
+        return None
+    if t[0] == '"':
+        if len(t) < 2 or t[-1] != '"':
+            raise Error("unterminated double-quoted string: %s" % t)
+        try:
+            return json.loads(t)
+        except ValueError:
+            return t[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    if t[0] == "'":
+        if len(t) < 2 or t[-1] != "'":
+            raise Error("unterminated single-quoted string: %s" % t)
+        return t[1:-1].replace("''", "'")
+    if t[0] in "[{":
+        val, rest = _flow(t, 0)
+        if t[rest:].strip():
+            raise Error("trailing text after flow value: %s" % t)
+        return val
+    low = t.lower()
+    if low in ("true", "yes", "on"):
+        return True
+    if low in ("false", "no", "off"):
+        return False
+    if low in ("null", "~"):
+        return None
+    if re.match(r"^-?\d+$", t):
+        return int(t)
+    if re.match(r"^-?\d+\.\d+$", t):
+        return t  # keep "1.0" as text: versions must not become floats
+    return t
+
+
+def _flow(s, i):
+    """Parse a flow collection or scalar starting at s[i]; return (value, next index)."""
+    while i < len(s) and s[i] in " \t":
+        i += 1
+    if s[i] == "[":
+        out, i = [], i + 1
+        while True:
+            while i < len(s) and s[i] in " \t":
+                i += 1
+            if i >= len(s):
+                raise Error("unterminated [ in %s" % s)
+            if s[i] == "]":
+                return out, i + 1
+            v, i = _flow(s, i)
+            out.append(v)
+            while i < len(s) and s[i] in " \t":
+                i += 1
+            if i < len(s) and s[i] == ",":
+                i += 1
+    if s[i] == "{":
+        out, i = {}, i + 1
+        while True:
+            while i < len(s) and s[i] in " \t,":
+                i += 1
+            if i >= len(s):
+                raise Error("unterminated { in %s" % s)
+            if s[i] == "}":
+                return out, i + 1
+            j = i
+            q = None
+            while j < len(s):
+                if q:
+                    if s[j] == q:
+                        q = None
+                elif s[j] in "\"'":
+                    q = s[j]
+                elif s[j] == ":":
+                    break
+                j += 1
+            key = _scalar(s[i:j])
+            v, i = _flow(s, j + 1)
+            out[str(key)] = v
+    # scalar inside a flow collection
+    j, q = i, None
+    while j < len(s):
+        c = s[j]
+        if q:
+            if c == "\\" and q == '"':
+                j += 2
+                continue
+            if c == q:
+                q = None
+        elif c in "\"'" and j == i:
+            q = c
+        elif c in ",]}":
+            break
+        j += 1
+    return _scalar(s[i:j]), j
+
+
+def _split_key(text):
+    q = None
+    for i, c in enumerate(text):
+        if q:
+            if c == q:
+                q = None
+            continue
+        if c in "\"'" and i == 0:
+            q = c
+        elif c == ":" and (i + 1 == len(text) or text[i + 1] in " \t"):
+            return text[:i].strip(), text[i + 1:].strip()
+    return None, None
+
+
+class _Yaml(object):
+    def __init__(self, text):
+        self.raw = text.replace("\r\n", "\n").replace("\t", "    ").split("\n")
+        self.i = 0
+
+    def _content(self, i):
+        while i < len(self.raw):
+            s = self.raw[i]
+            st = s.strip()
+            if st and not st.startswith("#") and st != "---":
+                return i
+            i += 1
+        return i
+
+    def _indent(self, i):
+        s = self.raw[i]
+        return len(s) - len(s.lstrip(" "))
+
+    def parse(self):
+        i = self._content(0)
+        if i >= len(self.raw):
+            return None
+        v, i = self._block(i, self._indent(i))
+        i = self._content(i)
+        if i < len(self.raw):
+            raise Error("YAML: unexpected content at line %d: %s" % (i + 1, self.raw[i].strip()))
+        return v
+
+    def _block(self, i, ind):
+        t = self.raw[i].strip()
+        if t == "-" or t.startswith("- "):
+            return self._seq(i, ind)
+        return self._map(i, ind)
+
+    def _blockscalar(self, i, header, parent_ind):
+        style, chomp = header[0], header[1:2]
+        lines, j, ind = [], i, None
+        while j < len(self.raw):
+            s = self.raw[j]
+            if s.strip() == "":
+                lines.append("")
+                j += 1
+                continue
+            cur = len(s) - len(s.lstrip(" "))
+            if cur <= parent_ind:
+                break
+            if ind is None:
+                ind = cur
+            if cur < ind:
+                break
+            lines.append(s[ind:])
+            j += 1
+        while lines and lines[-1] == "":
+            lines.pop()  # trailing blank lines are not content
+        if style == "|":
+            text = "\n".join(lines)
+        else:
+            parts, para = [], []
+            for ln in lines:
+                if ln == "":
+                    parts.append(" ".join(para))
+                    para = []
+                else:
+                    para.append(ln)
+            parts.append(" ".join(para))
+            text = "\n".join(parts)
+        if chomp != "-":
+            text += "\n"
+        return text, j
+
+    def _value(self, rest, i, ind):
+        """Value after 'key:' or '- ' on line i (already consumed). Returns (value, next i)."""
+        if rest[:1] in ("|", ">"):
+            return self._blockscalar(i + 1, rest, ind)
+        if rest == "":
+            j = self._content(i + 1)
+            if j < len(self.raw):
+                nind = self._indent(j)
+                nt = self.raw[j].strip()
+                if nind > ind or (nind == ind and (nt == "-" or nt.startswith("- "))):
+                    return self._block(j, nind)
+            return None, i + 1
+        if rest[0] in "[{":
+            # flow value may continue on following lines
+            buf, j = rest, i + 1
+            while True:
+                try:
+                    v, end = _flow(buf, 0)
+                    return v, j
+                except (Error, IndexError):
+                    if j >= len(self.raw):
+                        raise Error("YAML: unterminated flow value near line %d" % (i + 1))
+                    buf += " " + _strip_comment(self.raw[j].strip())
+                    j += 1
+        # plain or quoted scalar, possibly continued on more-indented lines
+        j = i + 1
+        if rest[0] not in "\"'":
+            while j < len(self.raw):
+                s = self.raw[j]
+                if s.strip() == "" or s.strip().startswith("#"):
+                    break
+                if self._indent(j) <= ind:
+                    break
+                rest += " " + _strip_comment(s.strip())
+                j += 1
+        else:
+            q = rest[0]
+            while not (len(rest) > 1 and rest.endswith(q) and not rest.endswith("\\" + q)) and j < len(self.raw):
+                rest += " " + self.raw[j].strip()
+                j += 1
+        return _scalar(rest), j
+
+    def _map(self, i, ind):
+        out = {}
+        while True:
+            i = self._content(i)
+            if i >= len(self.raw) or self._indent(i) < ind:
+                return out, i
+            if self._indent(i) > ind:
+                raise Error("YAML: bad indentation at line %d: %s" % (i + 1, self.raw[i].strip()))
+            text = _strip_comment(self.raw[i].strip())
+            if text == "-" or text.startswith("- "):
+                return out, i
+            key, rest = _split_key(text)
+            if key is None:
+                raise Error("YAML: expected 'key: value' at line %d: %s" % (i + 1, text))
+            key = _scalar(key)
+            v, i = self._value(rest, i, ind)
+            out[str(key)] = v
+
+    def _seq(self, i, ind):
+        out = []
+        while True:
+            i = self._content(i)
+            if i >= len(self.raw) or self._indent(i) != ind:
+                return out, i
+            text = self.raw[i].strip()
+            if not (text == "-" or text.startswith("- ")):
+                return out, i
+            body = _strip_comment(text[1:].strip()) if text != "-" else ""
+            k, r = _split_key(body) if body and body[0] not in "[{\"'" else (None, None)
+            if k is not None:
+                # "- key: value" starts a map indented at the item's content column
+                col = self._indent(i) + 2
+                self.raw[i] = " " * col + self.raw[i].strip()[2:]
+                v, i = self._map(i, col)
+                out.append(v)
+            else:
+                v, i = self._value(body, i, ind)
+                out.append(v)
+
+
+def yaml_load(text):
+    return _Yaml(text).parse()
+
+
+def _yq(s):
+    return json.dumps(s, ensure_ascii=False)
+
+
+def yaml_dump(obj, ind=0):
+    """Deterministic YAML emitter for front matter (strings always double-quoted)."""
+    pad = " " * ind
+    out = []
+    for k, v in obj.items():
+        key = k if re.match(r"^[A-Za-z0-9_.-]+$", k) else _yq(k)
+        if isinstance(v, dict):
+            if not v:
+                out.append("%s%s: {}" % (pad, key))
+            else:
+                out.append("%s%s:" % (pad, key))
+                out.append(yaml_dump(v, ind + 2))
+        elif isinstance(v, list):
+            out.append("%s%s: [%s]" % (pad, key, ", ".join(_yscalar(x) for x in v)))
+        else:
+            out.append("%s%s: %s" % (pad, key, _yscalar(v)))
+    return "\n".join(out)
+
+
+def _yscalar(v):
+    if v is True:
+        return "true"
+    if v is False:
+        return "false"
+    if v is None:
+        return "null"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, ensure_ascii=False, sort_keys=True)
+    return _yq(str(v))
+
+
+# ---------------------------------------------------------------------------------------------
+# SKILL.md, sections, semver
+# ---------------------------------------------------------------------------------------------
+
+def split_frontmatter(text):
+    text = text.replace("\r\n", "\n")
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find("\n---", 4)
+    while end != -1 and text[end + 4:end + 5] not in ("\n", ""):
+        end = text.find("\n---", end + 4)
+    if end == -1:
+        raise Error("front matter not closed with ---")
+    fm = yaml_load(text[4:end]) or {}
+    if not isinstance(fm, dict):
+        raise Error("front matter must be a mapping")
+    body = text[end + 4:]
+    if body.startswith("\n"):
+        body = body[1:]
+    return fm, body
+
+
+def _headings(lines):
+    """Yield (index, level, text) for ATX headings outside fenced code blocks."""
+    fence = None
+    for i, ln in enumerate(lines):
+        m = re.match(r"^\s{0,3}(`{3,}|~{3,})", ln)
+        if m:
+            mark = m.group(1)[0]
+            if fence is None:
+                fence = mark
+            elif fence == mark:
+                fence = None
+            continue
+        if fence:
+            continue
+        m = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", ln)
+        if m:
+            yield i, len(m.group(1)), m.group(2).strip()
+
+
+def _norm_heading(h):
+    h = h.strip()
+    m = re.match(r"^(#{1,6})\s+(.*)$", h)
+    level = len(m.group(1)) if m else None
+    text = (m.group(2) if m else h).strip().lower()
+    return level, text
+
+
+def find_section(body, heading):
+    """Return (start, content_start, end) line indexes of a section, or None."""
+    lines = body.split("\n")
+    level, text = _norm_heading(heading)
+    hs = list(_headings(lines))
+    for n, (i, lv, t) in enumerate(hs):
+        if t.lower() == text and (level is None or lv == level):
+            end = len(lines)
+            for (j, lv2, _t) in hs[n + 1:]:
+                if lv2 <= lv:
+                    end = j
+                    break
+            return i, i + 1, end, lv
+    return None
+
+
+def _join(lines):
+    return "\n".join(lines)
+
+
+def _block(text):
+    return text.rstrip("\n").split("\n")
+
+
+def _fit(text):
+    """Text inserted into a section ends with exactly one blank line before the next heading."""
+    return _block(text) + [""]
+
+
+def parse_semver(v):
+    m = re.match(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$", str(v).strip())
+    if not m:
+        raise Error("not a version: %r" % v)
+    return tuple(int(x or 0) for x in m.groups())
+
+
+def satisfies(version, constraint):
+    """Supports '*', exact, '^1.2', '~1.2', '>=1.2', '<2', and space-separated conjunctions."""
+    if constraint in (None, "", "*", "latest"):
+        return True
+    v = parse_semver(version)
+    for c in str(constraint).split():
+        if c.startswith("^"):
+            b = parse_semver(c[1:])
+            ok = v >= b and (v[0] == b[0] if b[0] > 0 else (v[1] == b[1] if b[1] > 0 else v[2] == b[2]))
+        elif c.startswith("~"):
+            b = parse_semver(c[1:])
+            ok = v >= b and v[:2] == b[:2]
+        elif c.startswith(">="):
+            ok = v >= parse_semver(c[2:])
+        elif c.startswith("<="):
+            ok = v <= parse_semver(c[2:])
+        elif c.startswith(">"):
+            ok = v > parse_semver(c[1:])
+        elif c.startswith("<"):
+            ok = v < parse_semver(c[1:])
+        else:
+            parts = c.lstrip("=v").split(".")
+            b = parse_semver(c.lstrip("="))
+            ok = v[:len(parts)] == b[:len(parts)]
+        if not ok:
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------------------------
+# Skill model and patches
+# ---------------------------------------------------------------------------------------------
+
+class Skill(object):
+    def __init__(self, name, src, fm, body, files, origin):
+        self.name = name
+        self.src = src          # source directory (for variants)
+        self.fm = fm            # front matter dict (ordered)
+        self.body = body        # markdown body
+        self.files = files      # {relpath: (bytes, executable)} excluding SKILL.md
+        self.origin = origin    # "base" or "local:<layer>"
+        self.notes = []         # provenance for the generated header
+        self.src_name = name    # name in the source, kept when an overlay renames the skill
+
+    @property
+    def version(self):
+        md = self.fm.get("metadata") or {}
+        return str(md.get("version", "0.0.0"))
+
+    def clone(self):
+        s = Skill(self.name, self.src, json.loads(json.dumps(self.fm)), self.body, dict(self.files), self.origin)
+        s.notes = list(self.notes)
+        s.src_name = self.src_name
+        return s
+
+
+def load_skill(d, origin):
+    p = os.path.join(d, "SKILL.md")
+    with open(p, "rb") as f:
+        text = f.read().decode("utf-8")
+    try:
+        fm, body = split_frontmatter(text)
+    except Error as e:
+        raise Error("%s: %s" % (p, e))
+    files = {}
+    for root, dirs, fnames in os.walk(d):
+        dirs.sort()
+        rel_root = os.path.relpath(root, d)
+        top = rel_root.split(os.sep)[0]
+        if rel_root != "." and top in STRIP_TOP:
+            continue
+        dirs[:] = [x for x in dirs if not (rel_root == "." and x in STRIP_TOP) and x != "__pycache__"]
+        for fn in sorted(fnames):
+            if rel_root == "." and (fn == "SKILL.md" or fn in STRIP_TOP):
+                continue
+            if fn.endswith(".pyc") or fn == ".DS_Store":
+                continue
+            fp = os.path.join(root, fn)
+            rel = os.path.normpath(os.path.join(rel_root, fn)).replace(os.sep, "/")
+            with open(fp, "rb") as f:
+                files[rel] = (f.read(), bool(os.stat(fp).st_mode & 0o111))
+    name = fm.get("name") or os.path.basename(os.path.normpath(d))
+    return Skill(str(name), d, fm, body, files, origin)
+
+
+def _text_of(spec, root, what):
+    """A patch payload: a string, or {text: ...} / {file: path relative to the layer root}."""
+    if isinstance(spec, str):
+        return spec
+    if isinstance(spec, dict):
+        if "text" in spec:
+            return str(spec["text"])
+        if "file" in spec:
+            p = _safe_join(root, spec["file"])
+            with open(p, "rb") as f:
+                return f.read().decode("utf-8")
+    raise Error("%s: expected text, {text: ...} or {file: ...}" % what)
+
+
+def _safe_join(root, rel):
+    p = os.path.normpath(os.path.join(root, os.path.expanduser(str(rel))))
+    return p
+
+
+def _safe_rel(rel):
+    r = os.path.normpath(str(rel)).replace(os.sep, "/")
+    if r.startswith("../") or r == ".." or os.path.isabs(r) or r == "SKILL.md":
+        raise Error("file path %r must stay inside the skill and not be SKILL.md" % rel)
+    return r
+
+
+def apply_patch(skill, op, root, where):
+    if not isinstance(op, dict) or len(op) != 1:
+        raise Error("%s: each patch is a one-key mapping, got %r" % (where, op))
+    kind, arg = list(op.items())[0]
+    w = "%s: %s" % (where, kind)
+    lines = skill.body.split("\n")
+    if kind == "append":
+        skill.body = skill.body.rstrip("\n") + "\n\n" + _text_of(arg, root, w).rstrip("\n") + "\n"
+    elif kind == "prepend":
+        txt = _text_of(arg, root, w)
+        hs = list(_headings(lines))
+        at = hs[0][0] + 1 if hs and hs[0][1] == 1 and all(not x.strip() for x in lines[:hs[0][0]]) else 0
+        rest = lines[at:]
+        while rest and not rest[0].strip():
+            rest.pop(0)
+        skill.body = _join(lines[:at] + ([""] if at else []) + _fit(txt) + rest)
+    elif kind in ("append_section", "prepend_section", "replace_section"):
+        if not isinstance(arg, dict) or "heading" not in arg:
+            raise Error("%s needs {heading: ..., text|file: ...}" % w)
+        txt = _text_of(arg, root, w)
+        sec = find_section(skill.body, arg["heading"])
+        if sec is None:
+            if kind == "replace_section" or arg.get("create") is False:
+                raise Error("%s: section %r not found" % (w, arg["heading"]))
+            lv, htext = _norm_heading(arg["heading"])
+            title = re.sub(r"^#+\s*", "", str(arg["heading"]).strip())
+            skill.body = skill.body.rstrip("\n") + "\n\n" + "#" * (lv or 2) + " " + title + "\n\n" + txt.rstrip("\n") + "\n"
+        else:
+            start, cstart, end, _lv = sec
+            content = lines[cstart:end]
+            if kind == "replace_section":
+                new = [""] + _fit(txt)
+            elif kind == "append_section":
+                while content and not content[-1].strip():
+                    content.pop()
+                new = content + [""] + _fit(txt)
+            else:
+                while content and not content[0].strip():
+                    content.pop(0)
+                new = [""] + _fit(txt) + content
+            if end == len(lines):
+                while new and not new[-1].strip():
+                    new.pop()
+                new.append("")
+            skill.body = _join(lines[:cstart] + new + lines[end:])
+    elif kind == "remove_section":
+        sec = find_section(skill.body, str(arg))
+        if sec is None:
+            raise Error("%s: section %r not found" % (w, arg))
+        skill.body = _join(lines[:sec[0]] + lines[sec[2]:])
+    elif kind == "replace_text":
+        if not isinstance(arg, dict) or "old" not in arg or "new" not in arg:
+            raise Error("%s needs {old: ..., new: ...}" % w)
+        old, new = str(arg["old"]), str(arg["new"])
+        n = skill.body.count(old)
+        want = arg.get("count")
+        if n == 0 or (want is not None and n != int(want)):
+            raise Error("%s: %r found %d time(s), expected %s" % (w, old, n, want if want is not None else ">= 1"))
+        skill.body = skill.body.replace(old, new)
+    elif kind == "description":
+        skill.fm["description"] = _text_of(arg, root, w).strip()
+    elif kind == "set":
+        if not isinstance(arg, dict):
+            raise Error("%s needs a mapping of front-matter keys" % w)
+        for k, v in arg.items():
+            if k == "metadata" and isinstance(v, dict):
+                md = dict(skill.fm.get("metadata") or {})
+                md.update({str(a): str(b) for a, b in v.items()})
+                skill.fm["metadata"] = md
+            else:
+                skill.fm[k] = v
+    elif kind == "unset":
+        for k in (arg if isinstance(arg, list) else [arg]):
+            skill.fm.pop(str(k), None)
+    elif kind == "add_files":
+        if not isinstance(arg, dict):
+            raise Error("%s needs {dest-in-skill: source-path}" % w)
+        for dest, src in sorted(arg.items()):
+            rel = _safe_rel(dest)
+            p = _safe_join(root, src)
+            if os.path.isdir(p):
+                for r2, ds, fs in os.walk(p):
+                    ds.sort()
+                    for fn in sorted(fs):
+                        fp = os.path.join(r2, fn)
+                        sub = os.path.relpath(fp, p).replace(os.sep, "/")
+                        with open(fp, "rb") as f:
+                            skill.files[_safe_rel(rel + "/" + sub)] = (f.read(), bool(os.stat(fp).st_mode & 0o111))
+            else:
+                with open(p, "rb") as f:
+                    skill.files[rel] = (f.read(), bool(os.stat(p).st_mode & 0o111))
+    elif kind == "remove_files":
+        for rel in (arg if isinstance(arg, list) else [arg]):
+            r = _safe_rel(rel)
+            hit = [k for k in skill.files if k == r or k.startswith(r.rstrip("/") + "/")]
+            if not hit:
+                raise Error("%s: %r not in skill" % (w, rel))
+            for k in hit:
+                del skill.files[k]
+    else:
+        raise Error("%s: unknown patch %r (append, prepend, append_section, prepend_section, "
+                    "replace_section, remove_section, replace_text, description, set, unset, "
+                    "add_files, remove_files)" % (where, kind))
+
+
+def variant_file(skill, provider, model):
+    vdir = os.path.join(skill.src, "variants")
+    keys = []
+    if model:
+        keys.append("%s.%s" % (provider, model))
+    keys.append(provider)
+    for k in keys:
+        p = os.path.join(vdir, k + ".md")
+        if os.path.isfile(p):
+            return k, p
+    return None, None
+
+
+def apply_variant(skill, key, path):
+    """variants/<key>.md: front matter = {mode, description, set, patches}; body per mode.
+
+    mode sections (default): each '## Heading' block in the body replaces the same-named
+    section of the base, or is appended when the base has none. mode append: body appended.
+    mode replace: body replaces the whole base body.
+    """
+    with open(path, "rb") as f:
+        fm, body = split_frontmatter(f.read().decode("utf-8"))
+    mode = fm.get("mode", "sections")
+    where = "variant %s/%s" % (skill.name, key)
+    root = os.path.dirname(path)
+    if fm.get("description"):
+        skill.fm["description"] = str(fm["description"]).strip()
+    if fm.get("set"):
+        apply_patch(skill, {"set": fm["set"]}, root, where)
+    for op in fm.get("patches") or []:
+        apply_patch(skill, op, root, where)
+    if body.strip():
+        if mode == "replace":
+            skill.body = body
+        elif mode == "append":
+            apply_patch(skill, {"append": body}, root, where)
+        elif mode == "sections":
+            blines = body.split("\n")
+            hs = [h for h in _headings(blines)]
+            if not hs:
+                raise Error("%s: mode sections needs '## Heading' blocks" % where)
+            top = min(lv for _i, lv, _t in hs)
+            heads = [h for h in hs if h[1] == top]
+            for n, (i, lv, t) in enumerate(heads):
+                end = heads[n + 1][0] if n + 1 < len(heads) else len(blines)
+                content = _join(blines[i + 1:end]).strip("\n")
+                h = "#" * lv + " " + t
+                if find_section(skill.body, h):
+                    apply_patch(skill, {"replace_section": {"heading": h, "text": content}}, root, where)
+                else:
+                    apply_patch(skill, {"append_section": {"heading": h, "text": content}}, root, where)
+        else:
+            raise Error("%s: unknown mode %r (sections, append, replace)" % (where, mode))
+    md = dict(skill.fm.get("metadata") or {})
+    md["variant"] = key
+    skill.fm["metadata"] = md
+    skill.notes.append("variant " + key)
+
+
+# ---------------------------------------------------------------------------------------------
+# Sources, layers and the effective plan
+# ---------------------------------------------------------------------------------------------
+
+def _run(cmd, cwd=None):
+    p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if p.returncode != 0:
+        raise Error("%s failed: %s" % (" ".join(cmd), p.stderr.decode("utf-8", "replace").strip()))
+    return p.stdout.decode("utf-8").strip()
+
+
+def cache_dir():
+    base = os.environ.get("AGENTSKILLS_CACHE") or os.path.join(
+        os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "agentskills")
+    return base
+
+
+def fetch_git(url, ref, commit=None):
+    """Shallow-fetch url at commit (if locked) or ref into the cache; return (dir, commit)."""
+    d = os.path.join(cache_dir(), hashlib.sha1(url.encode("utf-8")).hexdigest()[:16])
+    if not os.path.isdir(os.path.join(d, ".git")):
+        os.makedirs(d, exist_ok=True)
+        _run(["git", "init", "-q", d])
+        _run(["git", "-C", d, "remote", "add", "origin", url])
+    want = commit or ref or "HEAD"
+    try:
+        _run(["git", "-C", d, "fetch", "-q", "--depth", "1", "origin", want])
+    except Error:
+        if not commit:
+            raise
+        _run(["git", "-C", d, "fetch", "-q", "origin"])  # servers that refuse fetch-by-sha
+        _run(["git", "-C", d, "fetch", "-q", "origin", commit])
+    _run(["git", "-C", d, "-c", "advice.detachedHead=false", "checkout", "-q", "--force", "FETCH_HEAD"])
+    _run(["git", "-C", d, "clean", "-q", "-fdx"])
+    return d, _run(["git", "-C", d, "rev-parse", "HEAD"])
+
+
+class Source(object):
+    """A base or extends source: {path} or {git, ref}. Resolves to a directory."""
+
+    def __init__(self, spec, rel_root, lock_entry, update, label):
+        self.spec = spec if isinstance(spec, dict) else {"path": spec}
+        self.label = label
+        if "path" in self.spec:
+            self.dir = _safe_join(rel_root, self.spec["path"])
+            if not os.path.exists(self.dir):
+                raise Error("%s: path %s does not exist" % (label, self.dir))
+            self.commit = None  # local trees are not pinned: the rendered hashes are the record
+            self.kind = "path"
+        elif "git" in self.spec:
+            ref = str(self.spec.get("ref", "HEAD"))
+            locked = None
+            if lock_entry and not update and lock_entry.get("git") == self.spec["git"] and lock_entry.get("ref") == ref:
+                locked = lock_entry.get("commit")
+            self.dir, self.commit = fetch_git(str(self.spec["git"]), ref, locked)
+            self.kind = "git"
+        else:
+            raise Error("%s: needs path: or git:" % label)
+
+    def lock(self):
+        e = {"kind": self.kind}
+        if self.kind == "git":
+            e.update({"git": self.spec["git"], "ref": str(self.spec.get("ref", "HEAD")), "commit": self.commit})
+        else:
+            e.update({"path": self.spec["path"]})
+        return e
+
+
+def skills_root(d, subdir=None):
+    if subdir:
+        return os.path.join(d, subdir)
+    if os.path.isdir(os.path.join(d, "skills")):
+        return os.path.join(d, "skills")
+    return d
+
+
+def load_base(d):
+    out = {}
+    if not os.path.isdir(d):
+        raise Error("base skills directory %s not found" % d)
+    for n in sorted(os.listdir(d)):
+        sd = os.path.join(d, n)
+        if os.path.isfile(os.path.join(sd, "SKILL.md")):
+            s = load_skill(sd, "base")
+            out[s.name] = s
+    return out
+
+
+def load_overlay(path):
+    with open(path, "rb") as f:
+        text = f.read().decode("utf-8")
+    data = json.loads(text) if path.endswith(".json") else yaml_load(text)
+    data = data or {}
+    if not isinstance(data, dict):
+        raise Error("%s: overlay must be a mapping" % path)
+    api = data.get("apiVersion", API_VERSION)
+    if api != API_VERSION:
+        raise Error("%s: apiVersion %r is not supported (this resolver speaks %s)" % (path, api, API_VERSION))
+    return data
+
+
+def _skill_entries(data, where):
+    sk = data.get("skills", [])
+    if sk in ("*", "all"):
+        return [{"name": "*"}]
+    out = []
+    for e in sk or []:
+        if isinstance(e, str):
+            e = {"name": e}
+        if not isinstance(e, dict) or "name" not in e:
+            raise Error("%s: each skills entry needs a name" % where)
+        out.append(e)
+    return out
+
+
+class Plan(object):
+    """Everything needed to render: layers (outermost first), base skills, targets."""
+
+    def __init__(self, project, overlay_path, lock, update=False, base_override=None, targets=None, user=False):
+        self.project = project
+        self.overlay_path = overlay_path
+        self.user = user
+        self.sources = {}
+        self.layers = []   # list of (label, root, data)
+        lock_sources = (lock or {}).get("sources", {})
+        data = load_overlay(overlay_path) if overlay_path else {"skills": "*"}
+        oroot = project if overlay_path is None else self._layer_root(overlay_path)
+        self._collect("project", oroot, data, lock_sources, update, 0)
+        self.layers.reverse()  # extends first, project last
+        base_spec, base_root = None, project
+        for label, root, d in reversed(self.layers):
+            if d.get("base") is not None:
+                base_spec, base_root = d["base"], root
+                break
+        env = os.environ.get("AGENTSKILLS_BASE")
+        if base_override:
+            base_spec, base_root = {"path": os.path.abspath(base_override)}, project
+        elif env:
+            base_spec, base_root = {"path": env}, project
+        if base_spec is None:
+            raise Error("no base: set base: in the overlay, AGENTSKILLS_BASE, or --base")
+        src = Source(base_spec, base_root, lock_sources.get("base"), update, "base")
+        self.sources["base"] = src
+        sub = base_spec.get("subdir") if isinstance(base_spec, dict) else None
+        self.base = load_base(skills_root(src.dir, sub))
+        top = self.layers[-1][2]
+        self.targets = list(targets or top.get("targets") or PROVIDERS)
+        for t in self.targets:
+            if t not in PROVIDERS:
+                raise Error("unknown target %r (claude, codex, opencode)" % t)
+        self.paths = {}
+        for label, root, d in self.layers:
+            self.paths.update(d.get("paths") or {})
+        self.models = {}
+        for label, root, d in self.layers:
+            self.models.update(d.get("model") or {})
+        self.user_skills = "hide"   # project mode: switch the user-level Claude plugin off here
+        for label, root, d in self.layers:
+            if d.get("userSkills") is not None:
+                self.user_skills = str(d["userSkills"])
+        if self.user_skills not in ("hide", "keep"):
+            raise Error("userSkills must be hide or keep")
+        self.plugin = USER_PLUGIN
+        self.prefix = USER_PREFIX
+
+    @staticmethod
+    def _layer_root(overlay_path):
+        d = os.path.dirname(os.path.abspath(overlay_path))
+        # .agents/overlay.yaml -> paths are relative to the repo (parent of .agents)
+        return os.path.dirname(d) if os.path.basename(d) == ".agents" else d
+
+    def _collect(self, label, root, data, lock_sources, update, depth):
+        if depth > 8:
+            raise Error("extends chain deeper than 8 layers")
+        self.layers.append((label, root, data))
+        for ext in data.get("extends") or []:
+            if not isinstance(ext, dict) or "overlay" not in ext:
+                raise Error("%s: extends entries need {git|path: ..., overlay: <file in that source>}" % label)
+            elabel = "extends:" + os.path.splitext(os.path.basename(str(ext["overlay"])))[0]
+            if depth:
+                elabel = label + ">" + elabel
+            src_spec = {k: v for k, v in ext.items() if k in ("git", "ref", "path")}
+            src = Source(src_spec, root, lock_sources.get(elabel), update, elabel)
+            self.sources[elabel] = src
+            opath = os.path.join(src.dir, str(ext["overlay"]))
+            sub = load_overlay(opath)
+            # paths inside an extended overlay are relative to its source root (repo or folder)
+            self._collect(elabel, src.dir, sub, lock_sources, update, depth + 1)
+
+    def selection(self):
+        """Ordered {name: [(layer label, layer root, entry)]} across layers, plus local skills."""
+        sel, local = {}, {}
+        for label, root, d in self.layers:
+            for e in _skill_entries(d, label):
+                if e["name"] == "*":
+                    for n in sorted(self.base):
+                        sel.setdefault(n, [])
+                    continue
+                sel.setdefault(str(e["name"]), []).append((label, root, e))
+            for e in d.get("local") or []:
+                p = _safe_join(root, e["path"] if isinstance(e, dict) else e)
+                s = load_skill(p, "local:" + label)
+                local[s.name] = s
+                sel.setdefault(s.name, [])
+        for label, root, d in self.layers:
+            for n in d.get("exclude") or []:
+                sel.pop(str(n), None)
+        return sel, local
+
+    def plugin_dir(self):
+        """User-level Claude plugin folder, or None when skills go flat into ~/.claude/skills."""
+        if not self.user or not self.plugin or "claude" in self.paths:
+            return None
+        return os.path.join(os.path.expanduser(USER_DIRS["claude"]), self.plugin)
+
+    def target_dir(self, t):
+        if self.user:
+            if t == "claude" and self.plugin_dir():
+                return os.path.join(self.plugin_dir(), "skills")
+            return os.path.expanduser(self.paths.get(t, USER_DIRS[t]))
+        return os.path.join(self.project, self.paths.get(t, PROJECT_DIRS[t]))
+
+
+def effective_skills(plan, target):
+    """Return {output name: Skill} for one target, fully patched."""
+    sel, local = plan.selection()
+    out = {}
+    for name in sorted(sel):
+        entries = sel[name]
+        if name in local:
+            s = local[name].clone()
+        elif name in plan.base:
+            s = plan.base[name].clone()
+        else:
+            raise Error("skill %r is not in the base (%s) and not a local skill" % (name, ", ".join(sorted(plan.base)) or "empty"))
+        only = None
+        for label, root, e in entries:
+            if e.get("targets"):
+                only = list(e["targets"])
+        if only is not None and target not in only:
+            continue
+        for label, root, e in entries:
+            if e.get("version") is not None and not satisfies(s.version, e["version"]):
+                raise Error("%s: %s is %s, overlay %s pins %s" % (label, name, s.version, label, e["version"]))
+        # provider/model variant from the base (or local) skill first, then overlay patches
+        forced = None
+        for label, root, e in entries:
+            if e.get("variant"):
+                forced = str(e["variant"])
+        if forced == "none":
+            vkey, vpath = None, None
+        elif forced:
+            vkey, vpath = forced, os.path.join(s.src, "variants", forced + ".md")
+            if not os.path.isfile(vpath):
+                raise Error("%s: variant %r not found at %s" % (name, forced, vpath))
+        else:
+            vkey, vpath = variant_file(s, target, plan.models.get(target))
+        if vpath:
+            apply_variant(s, vkey, vpath)
+        for label, root, e in entries:
+            if e.get("description"):
+                s.fm["description"] = str(e["description"]).strip()
+            for n, op in enumerate(e.get("patches") or []):
+                apply_patch(s, op, root, "%s: %s patches[%d]" % (label, name, n))
+            if e.get("patches") or e.get("description"):
+                s.notes.append("patched by " + label)
+        new = str(entries[-1][2].get("rename")) if entries and entries[-1][2].get("rename") else None
+        for label, root, e in entries:
+            if e.get("rename"):
+                new = str(e["rename"])
+        if new:
+            s.notes.append("renamed from " + s.name)
+            s.name = new
+        if plan.user and target != "claude" and plan.prefix and not s.name.startswith(plan.prefix):
+            s.name = plan.prefix + s.name  # see USER_PREFIX
+        s.fm["name"] = s.name
+        out[s.name] = s
+    return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Rendering, hashing, writing
+# ---------------------------------------------------------------------------------------------
+
+def render_skill(s, target):
+    fm = {}
+    keys = ["name", "description"] + [k for k in s.fm if k not in ("name", "description")]
+    for k in keys:
+        if k not in s.fm:
+            continue
+        if target != "claude" and k not in SPEC_KEYS:
+            continue  # portable targets get spec fields only
+        v = s.fm[k]
+        if k == "metadata" and isinstance(v, dict):
+            v = {str(a): str(b) for a, b in v.items()}
+        fm[k] = v
+    origin = "base" if s.origin == "base" else "local"
+    prov = "%s %s %s" % (origin, s.src_name, s.version)
+    if s.notes:
+        prov += ", " + ", ".join(s.notes)
+    header = ("<!-- Generated by agentskills (%s). Do not edit here: change the base skill or the "
+              "overlay, then run `agentskills render`. -->" % prov)
+    text = "---\n" + yaml_dump(fm) + "\n---\n" + header + "\n\n" + s.body.lstrip("\n").rstrip("\n") + "\n"
+    files = {"SKILL.md": (text.encode("utf-8"), False)}
+    files.update(s.files)
+    return files
+
+
+def tree_hash(files):
+    h = hashlib.sha256()
+    for rel in sorted(files):
+        data, ex = files[rel]
+        h.update(rel.encode("utf-8") + b"\0" + (b"x" if ex else b"-") + b"\0")
+        h.update(hashlib.sha256(data).digest())
+    return "sha256-" + h.hexdigest()
+
+
+def read_tree(d):
+    files = {}
+    for root, dirs, fnames in os.walk(d):
+        dirs.sort()
+        for fn in sorted(fnames):
+            fp = os.path.join(root, fn)
+            rel = os.path.relpath(fp, d).replace(os.sep, "/")
+            with open(fp, "rb") as f:
+                files[rel] = (f.read(), bool(os.stat(fp).st_mode & 0o111))
+    return files
+
+
+def write_tree(d, files):
+    parent = os.path.dirname(d)
+    os.makedirs(parent, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix=".agentskills-", dir=parent)
+    try:
+        for rel in sorted(files):
+            data, ex = files[rel]
+            fp = os.path.join(tmp, rel)
+            os.makedirs(os.path.dirname(fp), exist_ok=True)
+            with open(fp, "wb") as f:
+                f.write(data)
+            os.chmod(fp, 0o755 if ex else 0o644)
+        os.chmod(tmp, 0o755)
+        if os.path.islink(d) or os.path.isfile(d):
+            os.unlink(d)
+        elif os.path.isdir(d):
+            shutil.rmtree(d)
+        os.rename(tmp, d)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+
+
+def read_marker(tdir):
+    p = os.path.join(tdir, MARKER)
+    if not os.path.isfile(p):
+        return []
+    with open(p) as f:
+        return [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
+
+
+def write_marker(tdir, names):
+    os.makedirs(tdir, exist_ok=True)
+    with open(os.path.join(tdir, MARKER), "w") as f:
+        f.write("# Skills in this folder that agentskills manages (rendered from a base + overlay).\n"
+                "# Do not edit them here. Other folders are yours and are never touched.\n")
+        for n in sorted(names):
+            f.write(n + "\n")
+
+
+def build(plan):
+    """Render everything in memory: {target: {skill: files}}."""
+    out = {}
+    for t in plan.targets:
+        out[t] = {n: render_skill(s, t) for n, s in effective_skills(plan, t).items()}
+        for n, files in out[t].items():
+            errs, _warns = validate_files(n, files, t)
+            if errs:
+                raise Error("rendered %s for %s is invalid: %s" % (n, t, "; ".join(errs)))
+    return out
+
+
+def make_lock(plan, rendered, skills_meta):
+    lock = {"lockVersion": 1, "generator": "agentskills " + VERSION, "sources": {}, "targets": {}}
+    for k, src in sorted(plan.sources.items()):
+        lock["sources"][k] = src.lock()
+    for t in sorted(rendered):
+        lock["targets"][t] = {
+            "dir": os.path.relpath(plan.target_dir(t), plan.project).replace(os.sep, "/") if not plan.user else plan.paths.get(t, USER_DIRS[t]),
+            "skills": {n: dict(skills_meta[t][n], hash=tree_hash(f)) for n, f in sorted(rendered[t].items())},
+        }
+    return lock
+
+
+def skills_meta_of(plan):
+    meta = {}
+    for t in plan.targets:
+        meta[t] = {}
+        for n, s in effective_skills(plan, t).items():
+            m = {"version": s.version, "origin": s.origin.split(":")[0]}
+            v = (s.fm.get("metadata") or {}).get("variant")
+            if v:
+                m["variant"] = v
+            meta[t][n] = m
+    return meta
+
+
+def lock_path(plan, explicit=None):
+    if explicit:
+        return explicit
+    if plan.overlay_path:
+        return os.path.join(os.path.dirname(os.path.abspath(plan.overlay_path)), LOCK_NAME)
+    return os.path.join(plan.project, ".agents", LOCK_NAME)
+
+
+def dump_json(obj):
+    return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+# ---------------------------------------------------------------------------------------------
+# Validation (Agent Skills spec + per-tool limits)
+# ---------------------------------------------------------------------------------------------
+
+def validate_files(dirname, files, target=None):
+    errs, warns = [], []
+    if "SKILL.md" not in files:
+        return ["missing SKILL.md"], warns
+    text = files["SKILL.md"][0].decode("utf-8")
+    try:
+        fm, body = split_frontmatter(text)
+    except Error as e:
+        return ["front matter: %s" % e], warns
+    if not text.startswith("---\n"):
+        errs.append("SKILL.md must start with YAML front matter")
+    name = fm.get("name")
+    if not isinstance(name, str) or not NAME_RE.match(name) or len(name) > 64:
+        errs.append("name %r must be 1-64 chars of a-z, 0-9 and single hyphens" % name)
+    elif name != dirname:
+        errs.append("name %r must match its folder %r" % (name, dirname))
+    d = fm.get("description")
+    if not isinstance(d, str) or not d.strip():
+        errs.append("description is required")
+    elif len(d) > 1024:
+        errs.append("description is %d chars (max 1024)" % len(d))
+    c = fm.get("compatibility")
+    if c is not None and (not isinstance(c, str) or not 1 <= len(c) <= 500):
+        errs.append("compatibility must be 1-500 chars")
+    md = fm.get("metadata")
+    if md is not None:
+        if not isinstance(md, dict):
+            errs.append("metadata must be a mapping")
+        elif not all(isinstance(v, str) for v in md.values()):
+            warns.append("metadata values should be strings (quote them)")
+        elif "version" in md:
+            try:
+                parse_semver(md["version"])
+            except Error:
+                errs.append("metadata.version %r is not semver" % md["version"])
+    extra = [k for k in fm if k not in SPEC_KEYS]
+    if extra and target in (None, "claude"):
+        warns.append("Claude-only front matter %s: dropped for Codex/OpenCode, rejected by claude.ai uploads" % ", ".join(sorted(extra)))
+    if isinstance(d, str):
+        wtu = fm.get("when_to_use") or ""
+        if len(d) + len(str(wtu)) > 1536:
+            warns.append("Claude Code truncates description + when_to_use at 1536 chars")
+    raw_fm = text.split("\n---", 1)[0]
+    for ln in raw_fm.split("\n"):
+        m = re.match(r"^description:\s*([^\"'|>].*)$", ln)
+        if m and " #" in ln:
+            warns.append("unquoted description contains ' #': YAML cuts it there; quote it")
+    n = body.count("\n")
+    if n > 500:
+        warns.append("SKILL.md body is %d lines (spec recommends under 500; move detail to references/)" % n)
+    for ref in re.findall(r"\]\(((?:references|scripts|assets)/[^)#\s]+)\)", body):
+        if ref not in files:
+            errs.append("links to %s which is not in the skill" % ref)
+    return errs, warns
+
+
+# ---------------------------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------------------------
+
+def find_overlay(project, explicit):
+    if explicit:
+        return os.path.abspath(explicit) if explicit != "none" else None
+    for cand in (DEFAULT_OVERLAY, ".agents/overlay.json"):
+        p = os.path.join(project, cand)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def make_plan(args, update=False):
+    project = os.path.abspath(args.project)
+    overlay = find_overlay(project, args.overlay)
+    if overlay is None and not (args.base or os.environ.get("AGENTSKILLS_BASE")):
+        raise Error("no %s in %s (run `agentskills init`), or pass --base to render every base skill" % (DEFAULT_OVERLAY, project))
+    lp = args.lock or (os.path.join(os.path.dirname(overlay), LOCK_NAME) if overlay else None)
+    lock = None
+    if lp and os.path.isfile(lp):
+        with open(lp) as f:
+            lock = json.load(f)
+    targets = args.target.split(",") if args.target else None
+    plan = Plan(project, overlay, lock, update=update, base_override=args.base, targets=targets, user=args.user)
+    if args.plugin is not None:
+        plan.plugin = args.plugin
+    if args.prefix is not None:
+        plan.prefix = args.prefix
+    if args.dest:
+        if len(plan.targets) != 1:
+            raise Error("--dest needs exactly one --target")
+        plan.paths[plan.targets[0]] = os.path.abspath(args.dest)
+    return plan
+
+
+PLUGIN_ID_SUFFIX = "@skills-dir"  # how Claude Code names a plugin found in ~/.claude/skills
+
+
+def plugin_manifest(plan, rendered):
+    digest = hashlib.sha256("".join(tree_hash(f) for _n, f in sorted(rendered.items())).encode()).hexdigest()[:10]
+    src = plan.sources.get("base")
+    rev = (src.commit or "")[:10] if src is not None and src.commit else digest
+    return dump_json({
+        "name": plan.plugin,
+        "version": "1.0.0-" + rev,
+        "description": "Generic skills from agent-playbook, rendered by agentskills. A project with its own overlay turns this plugin off in its .claude/settings.json.",
+        "author": {"name": "agent-playbook"},
+    })
+
+
+def settings_guard(plan):
+    """(path, new text or None) for the project's .claude/settings.json shadow guard."""
+    if plan.user or plan.user_skills != "hide" or "claude" not in plan.targets or "claude" in plan.paths:
+        return None, None
+    p = os.path.join(plan.project, ".claude", "settings.json")
+    data = {}
+    if os.path.isfile(p):
+        try:
+            with open(p) as f:
+                data = json.load(f)
+        except ValueError as e:
+            raise Error("%s is not valid JSON (%s); fix it or set userSkills: keep" % (p, e))
+    ep = data.get("enabledPlugins")
+    key = plan.plugin + PLUGIN_ID_SUFFIX
+    if isinstance(ep, dict) and ep.get(key) is False:
+        return p, None
+    ep = dict(ep or {})
+    ep[key] = False
+    data["enabledPlugins"] = ep
+    return p, json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+
+def cmd_render(args, update=False):
+    plan = make_plan(args, update=update)
+    rendered = build(plan)
+    lock = make_lock(plan, rendered, skills_meta_of(plan))
+    changed = 0
+    pdir = plan.plugin_dir()
+    if pdir and "claude" in plan.targets:
+        mf = os.path.join(pdir, ".claude-plugin", "plugin.json")
+        if os.path.exists(pdir) and not os.path.isfile(os.path.join(pdir, "skills", MARKER)) and not args.force:
+            raise Error("%s exists and is not managed by agentskills; pass --force to take it over" % pdir)
+        text = plugin_manifest(plan, rendered["claude"])
+        if not os.path.isfile(mf) or open(mf).read() != text:
+            os.makedirs(os.path.dirname(mf), exist_ok=True)
+            with open(mf, "w") as f:
+                f.write(text)
+            print("wrote %s (Claude Code loads it as %s%s)" % (mf, plan.plugin, PLUGIN_ID_SUFFIX))
+    gp, gtext = (None, None) if args.dest else settings_guard(plan)
+    if gtext is not None:
+        os.makedirs(os.path.dirname(gp), exist_ok=True)
+        with open(gp, "w") as f:
+            f.write(gtext)
+        print("set enabledPlugins[\"%s%s\"] = false in .claude/settings.json (this project's skills win over the user-level ones)" % (plan.plugin, PLUGIN_ID_SUFFIX))
+    for t in plan.targets:
+        tdir = plan.target_dir(t)
+        managed = read_marker(tdir)
+        for n, files in sorted(rendered[t].items()):
+            d = os.path.join(tdir, n)
+            if os.path.exists(d) and n not in managed and not args.force:
+                raise Error("%s exists and is not managed by agentskills; rename one, or pass --force to take it over" % d)
+            if os.path.isdir(d) and not os.path.islink(d) and read_tree(d) == files:
+                continue
+            write_tree(d, files)
+            changed += 1
+            print("rendered %s/%s" % (os.path.relpath(tdir, plan.project) if not plan.user else tdir, n))
+        for n in managed:
+            if n not in rendered[t]:
+                shutil.rmtree(os.path.join(tdir, n), ignore_errors=True)
+                print("removed %s/%s (no longer selected)" % (tdir, n))
+                changed += 1
+        write_marker(tdir, rendered[t].keys())
+    if not args.no_lock and not plan.user and not args.dest:
+        lp = lock_path(plan, args.lock)
+        os.makedirs(os.path.dirname(lp), exist_ok=True)
+        new = dump_json(lock)
+        old = open(lp).read() if os.path.isfile(lp) else None
+        if new != old:
+            with open(lp, "w") as f:
+                f.write(new)
+            print("wrote %s" % os.path.relpath(lp, plan.project))
+    print("%d skill folder(s) changed across %s" % (changed, ", ".join(plan.targets)))
+    return 0
+
+
+def cmd_check(args):
+    """Exit 1 when rendered files were hand-edited (vs lock) or drifted (vs base + overlay)."""
+    project = os.path.abspath(args.project)
+    overlay = find_overlay(project, args.overlay)
+    lp = args.lock or (os.path.join(os.path.dirname(overlay), LOCK_NAME) if overlay else os.path.join(project, ".agents", LOCK_NAME))
+    problems = []
+    lock = None
+    if os.path.isfile(lp):
+        with open(lp) as f:
+            lock = json.load(f)
+    else:
+        problems.append("missing lockfile %s" % os.path.relpath(lp, project))
+    # 1. hand edits: files on disk vs lock hashes (offline)
+    if lock:
+        for t, te in sorted(lock.get("targets", {}).items()):
+            tdir = os.path.join(project, te["dir"])
+            for n, m in sorted(te.get("skills", {}).items()):
+                d = os.path.join(tdir, n)
+                if not os.path.isdir(d):
+                    problems.append("missing: %s/%s" % (te["dir"], n))
+                elif tree_hash(read_tree(d)) != m["hash"]:
+                    problems.append("edited by hand: %s/%s differs from the lockfile" % (te["dir"], n))
+    # 2. drift: re-render from the locked sources and compare
+    if not args.offline:
+        try:
+            plan = make_plan(args)
+            rendered = build(plan)
+            newlock = make_lock(plan, rendered, skills_meta_of(plan))
+            if lock and dump_json(newlock) != dump_json(lock):
+                for t in sorted(set(newlock["targets"]) | set(lock.get("targets", {}))):
+                    a = newlock["targets"].get(t, {}).get("skills", {})
+                    b = lock.get("targets", {}).get(t, {}).get("skills", {})
+                    for n in sorted(set(a) | set(b)):
+                        if a.get(n) != b.get(n):
+                            problems.append("drift: %s %s would change on render (%s -> %s)" % (
+                                t, n, (b.get(n) or {}).get("hash", "absent")[:19], (a.get(n) or {}).get("hash", "absent")[:19]))
+                if newlock["sources"] != lock.get("sources"):
+                    problems.append("drift: sources differ from the lockfile (base or extends moved)")
+            gp, gtext = settings_guard(plan)
+            if gtext is not None:
+                problems.append("missing: .claude/settings.json enabledPlugins[\"%s%s\"] = false" % (plan.plugin, PLUGIN_ID_SUFFIX))
+            for t in plan.targets:
+                tdir = plan.target_dir(t)
+                on_disk = set(read_marker(tdir))
+                for n in sorted(on_disk - set(rendered[t])):
+                    problems.append("stale: %s/%s is managed but no longer selected" % (t, n))
+        except Error as e:
+            problems.append("cannot re-render: %s (use --offline to only check hand edits)" % e)
+    if problems:
+        for p in problems:
+            print(p)
+        print("fix: agentskills render%s" % (" (then commit the result)" if not args.user else ""))
+        return 1
+    print("agentskills: rendered skills match the lockfile%s" % ("" if args.offline else " and the base + overlay"))
+    return 0
+
+
+def cmd_list(args):
+    plan = make_plan(args)
+    rows = []
+    for t in plan.targets:
+        for n, s in sorted(effective_skills(plan, t).items()):
+            v = (s.fm.get("metadata") or {}).get("variant", "-")
+            rows.append((t, n, s.version, v, s.origin, ", ".join(x for x in s.notes if not x.startswith("variant")) or "-"))
+    if args.json:
+        print(json.dumps([dict(zip(("target", "skill", "version", "variant", "origin", "notes"), r)) for r in rows], indent=2))
+        return 0
+    w = [max(len(str(r[i])) for r in rows + [("target", "skill", "version", "variant", "origin", "patches")]) for i in range(6)]
+    for r in [("target", "skill", "version", "variant", "origin", "patches")] + rows:
+        print("  ".join(str(x).ljust(w[i]) for i, x in enumerate(r)).rstrip())
+    return 0
+
+
+def cmd_validate(args):
+    """Validate skill folders (a base skills dir, one skill, or rendered target dirs)."""
+    rc = 0
+    paths = args.paths or ["."]
+    count = 0
+    for p in paths:
+        p = os.path.abspath(p)
+        dirs = [p] if os.path.isfile(os.path.join(p, "SKILL.md")) else [
+            os.path.join(p, n) for n in sorted(os.listdir(p)) if os.path.isfile(os.path.join(p, n, "SKILL.md"))]
+        if not dirs and os.path.isdir(os.path.join(p, "skills")):
+            q = os.path.join(p, "skills")
+            dirs = [os.path.join(q, n) for n in sorted(os.listdir(q)) if os.path.isfile(os.path.join(q, n, "SKILL.md"))]
+        for d in dirs:
+            count += 1
+            s = load_skill(d, "base")
+            files = dict(s.files)
+            with open(os.path.join(d, "SKILL.md"), "rb") as f:
+                files["SKILL.md"] = (f.read(), False)
+            errs, warns = validate_files(os.path.basename(d), files, args.target)
+            vdir = os.path.join(d, "variants")
+            if os.path.isdir(vdir):
+                for vf in sorted(os.listdir(vdir)):
+                    key = vf[:-3] if vf.endswith(".md") else vf
+                    if not vf.endswith(".md") or key.split(".")[0] not in PROVIDERS:
+                        errs.append("variants/%s: name must be <claude|codex|opencode>[.<model>].md" % vf)
+                        continue
+                    try:
+                        apply_variant(s.clone(), key, os.path.join(vdir, vf))
+                    except Error as e:
+                        errs.append(str(e))
+            for e in errs:
+                print("ERROR %s: %s" % (os.path.relpath(d), e))
+            for w in warns:
+                print("warn  %s: %s" % (os.path.relpath(d), w))
+            if errs:
+                rc = 1
+    print("%d skill(s) checked, %s" % (count, "ok" if rc == 0 else "errors found"))
+    return rc
+
+
+INIT_TEMPLATE = """# Overlay: which generic skills this project uses and what it changes in them.
+# Rendered by `agentskills render` into each tool's skills folder; `agentskills check` in CI.
+# Format: skills/DESIGN.md in https://github.com/TheGostsniperfr/agent-playbook
+apiVersion: agentskills/v1
+base:
+  git: %(git)s
+  ref: %(ref)s
+targets: [claude, codex, opencode]
+skills:%(skills)s
+"""
+
+
+def cmd_init(args):
+    project = os.path.abspath(args.project)
+    p = os.path.join(project, DEFAULT_OVERLAY)
+    if os.path.exists(p) and not args.force:
+        raise Error("%s already exists" % p)
+    names = args.skills.split(",") if args.skills else []
+    body = "".join("\n  - name: %s\n    # version: ^1.0\n    # patches:\n    #   - append_section: {heading: Steps, text: \"Project-specific step.\"}" % n for n in names) or " []"
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w") as f:
+        f.write(INIT_TEMPLATE % {"git": args.git, "ref": args.ref, "skills": body})
+    print("wrote %s; next: agentskills render" % os.path.relpath(p, project))
+    return 0
+
+
+def cmd_clean(args):
+    plan = make_plan(args)
+    for t in plan.targets:
+        tdir = plan.target_dir(t)
+        for n in read_marker(tdir):
+            shutil.rmtree(os.path.join(tdir, n), ignore_errors=True)
+            print("removed %s/%s" % (tdir, n))
+        m = os.path.join(tdir, MARKER)
+        if os.path.exists(m):
+            os.unlink(m)
+    pdir = plan.plugin_dir()
+    if pdir and "claude" in plan.targets and os.path.isdir(pdir):
+        shutil.rmtree(pdir)
+        print("removed %s" % pdir)
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="agentskills", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--version", action="version", version="agentskills " + VERSION)
+    sub = ap.add_subparsers(dest="cmd")
+
+    def common(p):
+        p.add_argument("-C", "--project", default=".", help="project root (default: .)")
+        p.add_argument("--overlay", help="overlay file (default: .agents/overlay.yaml; 'none' = no overlay)")
+        p.add_argument("--base", help="base checkout (wins over the overlay's base and AGENTSKILLS_BASE)")
+        p.add_argument("--target", help="comma-separated subset of claude,codex,opencode")
+        p.add_argument("--user", action="store_true", help="render into the user-level dirs (~/.claude/skills, ~/.agents/skills, ~/.config/opencode/skills)")
+        p.add_argument("--dest", help="render one --target into this folder (e.g. a Claude plugin's skills/)")
+        p.add_argument("--lock", help="lockfile path (default: next to the overlay)")
+        p.add_argument("--plugin", help="--user: Claude plugin folder name in ~/.claude/skills (default playbook; '' = flat skills)")
+        p.add_argument("--prefix", help="--user: name prefix for Codex/OpenCode skills (default playbook-; '' = none)")
+
+    p = sub.add_parser("render", help="render skills into each tool's folder and write the lockfile")
+    common(p)
+    p.add_argument("--force", action="store_true", help="take over folders not managed by agentskills")
+    p.add_argument("--no-lock", action="store_true", help="do not write the lockfile")
+    p = sub.add_parser("update", help="like render, but move git sources to the newest commit of their ref")
+    common(p)
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--no-lock", action="store_true")
+    p = sub.add_parser("check", help="exit 1 on hand edits or drift (for CI)")
+    common(p)
+    p.add_argument("--offline", action="store_true", help="only compare files with the lockfile hashes")
+    p = sub.add_parser("list", help="show the effective skills per target")
+    common(p)
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("validate", help="validate skill folders against the Agent Skills spec")
+    p.add_argument("paths", nargs="*")
+    p.add_argument("--target", help="validate for this tool (claude, codex, opencode)")
+    p = sub.add_parser("init", help="write a starter .agents/overlay.yaml")
+    p.add_argument("-C", "--project", default=".")
+    p.add_argument("--git", default="https://github.com/TheGostsniperfr/agent-playbook")
+    p.add_argument("--ref", default="main")
+    p.add_argument("--skills", help="comma-separated base skills to list")
+    p.add_argument("--force", action="store_true")
+    p = sub.add_parser("clean", help="remove every folder agentskills manages in the targets")
+    common(p)
+
+    args = ap.parse_args(argv)
+    try:
+        if args.cmd == "render":
+            return cmd_render(args)
+        if args.cmd == "update":
+            return cmd_render(args, update=True)
+        if args.cmd == "check":
+            return cmd_check(args)
+        if args.cmd == "list":
+            return cmd_list(args)
+        if args.cmd == "validate":
+            return cmd_validate(args)
+        if args.cmd == "init":
+            return cmd_init(args)
+        if args.cmd == "clean":
+            return cmd_clean(args)
+        ap.print_help()
+        return 2
+    except Error as e:
+        print("agentskills: error: %s" % e, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

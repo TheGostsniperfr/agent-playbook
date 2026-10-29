@@ -1,0 +1,14 @@
+# Org layer (what Arffornia/agent-kit would ship as overlay/arffornia.yaml): patches every
+# Arffornia repo gets on top of the generic base. Projects pull it in with `extends`.
+apiVersion: agentskills/v1
+skills:
+  - name: review-stack
+    version: ^1.0
+    patches:
+      - append_section:
+          heading: Rules
+          text: "- Arffornia: the orchestrator merges with \"Create a merge commit\", never squash."
+      - add_files:
+          references/arffornia.md: overlay/review-stack/arffornia.md
+  - name: artifact-style
+    version: ^1.0

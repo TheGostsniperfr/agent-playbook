@@ -1,0 +1,5 @@
+# Rendered by the tests and by trying the sample; not committed.
+sample-project/.claude/
+sample-project/.opencode/
+sample-project/.agents/skills/
+sample-project/.agents/agentskills.lock

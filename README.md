@@ -18,3 +18,28 @@ touchpoints, real anti-patterns and checklists.
 
 To use it on a new project, tell the agent: "Read `agent-playbook/runbook/README.md` and run
 the takeover for <scope>."
+
+## Skills
+
+[`skills/`](skills/) is the base of generic agent skills (open `SKILL.md` standard, semver in
+`metadata.version`, optional per-provider variants), and [`overlay/`](overlay/) is the
+`agentskills` resolver that renders them, plus a project's patches, for Claude Code
+(`.claude/skills`), Codex (`.agents/skills`) and OpenCode (`.opencode/skills`), with a lockfile
+and a CI drift check.
+
+| Skill | What it does |
+|---|---|
+| [`review-stack`](skills/review-stack/SKILL.md) | Chantier review page (PRs in merge order, decisions with defaults and "Other", proof), answers stored in the artifact database, and the review stack page |
+| [`artifact-style`](skills/artifact-style/SKILL.md) | The Agent Kit v2 visual style for HTML pages: tokens, type pairing, components, light and dark |
+| [`github-profile-page`](skills/github-profile-page/SKILL.md) | GitHub org or user profile: animated theme-aware SVG banner, live stats card, README |
+| [`overlay-apply`](skills/overlay-apply/SKILL.md) | Set up or update a project's overlay and run the resolver |
+
+- Install on a machine: Nix/home-manager module in [`overlay/nix/`](overlay/nix/flake.nix), or
+  `sh overlay/install.sh`. User-level skills appear as `/playbook:<name>` (Claude Code) and
+  `playbook-<name>` (Codex, OpenCode).
+- Use in a project: `agentskills init --skills review-stack`, add patches, `agentskills render`,
+  commit, and run `agentskills check` in CI.
+- How and why: [skills/DESIGN.md](skills/DESIGN.md); what exists elsewhere and what we measured:
+  [skills/RESEARCH.md](skills/RESEARCH.md).
+- Tests: `python3 -m unittest discover -s overlay/tests` and
+  `python3 -m unittest discover -s skills/review-stack/tests`; `nix flake check ./overlay/nix`.

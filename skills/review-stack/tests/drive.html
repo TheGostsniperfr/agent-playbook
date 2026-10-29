@@ -1,0 +1,9 @@
+<script>
+setTimeout(function(){
+ var r=document.getElementById("d-sandbox-opt-in"); r.checked=true; r.dispatchEvent(new Event("change"));
+ var t=document.getElementById("d-sandbox-text"); t.value="only for the website repo"; t.dispatchEvent(new Event("input")); t.dispatchEvent(new Event("blur"));
+ setTimeout(function(){ document.getElementById("v-note").value="ship it"; document.getElementById("v-approve").click();
+   setTimeout(function(){ var p=document.createElement("pre"); p.id="RESULT"; p.textContent=JSON.stringify({store:window.__store, fwl:document.querySelector('input[name="d-force-with-lease"]:checked').value, fwltext:document.getElementById("d-force-with-lease-text").value, vstatus:document.getElementById("v-status").textContent}); document.body.appendChild(p);},300);
+ },300);
+},500);
+</script>

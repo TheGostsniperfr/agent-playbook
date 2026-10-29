@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TheGostsniperfr/agent-playbook/skills/review-stack/assets/chantier.schema.json",
+  "title": "Chantier",
+  "description": "One chantier (a group of PRs plus the decisions the owner must take), rendered as a review page by review-stack.",
+  "type": "object",
+  "required": ["schema", "id", "title", "summary", "date", "merge", "decisions", "verified", "not_verified"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "chantier/v1"},
+    "id": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "Stable slug; also the db document prefix."},
+    "title": {"type": "string", "minLength": 1, "maxLength": 60, "description": "Page name, two to four words."},
+    "accent": {"type": "string", "maxLength": 20, "description": "Last word(s) of the title shown in the accent colour (must end the title)."},
+    "eyebrow": {"type": "string", "maxLength": 80},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 600},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "stats": {
+      "type": "array", "maxItems": 6,
+      "items": {"type": "object", "required": ["value", "label"], "additionalProperties": false,
+        "properties": {"value": {"type": "string", "maxLength": 12}, "label": {"type": "string", "maxLength": 60}}}
+    },
+    "parts": {
+      "type": "array",
+      "items": {"type": "object", "required": ["title", "bullets"], "additionalProperties": false,
+        "properties": {
+          "title": {"type": "string"},
+          "links": {"type": "array", "items": {"$ref": "#/$defs/link"}},
+          "bullets": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "proof": {"type": "string"}
+        }}
+    },
+    "merge": {
+      "type": "array", "minItems": 1, "description": "PRs and manual steps, in merge order.",
+      "items": {"type": "object", "required": ["title", "summary", "status"], "additionalProperties": false,
+        "properties": {
+          "title": {"type": "string", "description": "e.g. 'agent-kit #2 · core harness'"},
+          "url": {"type": "string", "pattern": "^https://"},
+          "summary": {"type": "string", "maxLength": 240},
+          "status": {"enum": ["ready", "draft", "blocked", "you", "after"]},
+          "status_label": {"type": "string", "maxLength": 16}
+        }}
+    },
+    "decisions": {
+      "type": "array",
+      "items": {"type": "object", "required": ["id", "title", "context", "options", "default"], "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+          "title": {"type": "string", "maxLength": 90},
+          "context": {"type": "string", "maxLength": 600},
+          "links": {"type": "array", "items": {"$ref": "#/$defs/link"}},
+          "options": {"type": "array", "minItems": 1, "maxItems": 6,
+            "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false,
+              "properties": {"id": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}, "label": {"type": "string", "maxLength": 120}, "detail": {"type": "string", "maxLength": 240}}}},
+          "default": {"type": "string", "description": "id of the recommended option; silence keeps it."},
+          "why": {"type": "string", "maxLength": 240}
+        }}
+    },
+    "verified": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+    "not_verified": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+    "footer": {"type": "string", "maxLength": 600}
+  },
+  "$defs": {
+    "link": {"type": "object", "required": ["label", "url"], "additionalProperties": false,
+      "properties": {"label": {"type": "string"}, "url": {"type": "string", "pattern": "^https://"}}},
+    "gap": {"type": "object", "required": ["title", "detail"], "additionalProperties": false,
+      "properties": {"title": {"type": "string", "maxLength": 60}, "detail": {"type": "string", "maxLength": 240}}}
+  }
+}

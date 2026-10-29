@@ -1,0 +1,81 @@
+<title>Review Stack</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* @artifact-style */
+.empty{background:var(--panel);border:1px dashed var(--line);border-radius:10px;padding:22px;color:var(--muted)}
+.done ol.merge .n{color:var(--muted)}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div>
+    <div class="eyebrow">Review stack</div>
+    <h1>Your <span>pile</span></h1>
+    <p>Every chantier waiting for you, oldest first. Open the top one, answer its decisions, approve it; the orchestrator merges and it moves to Done.</p>
+  </div>
+  <div class="stats" aria-label="Stack">
+    <div class="stat"><b id="n-wait">0</b><small>waiting for you</small></div>
+    <div class="stat"><b id="n-changes">0</b><small>sent back or on hold</small></div>
+    <div class="stat"><b id="n-done">0</b><small>approved or merged</small></div>
+  </div>
+</header>
+
+<section>
+  <div class="section-head"><div class="eyebrow">To review</div><h2>Next up</h2><p>In the order agents added them. Each page holds its own decisions.</p></div>
+  <div id="todo"><p class="empty">Nothing waiting. When an agent finishes a chantier it adds its review page here.</p></div>
+</section>
+
+<section class="done">
+  <div class="section-head"><div class="eyebrow">Done</div><h2>Approved and merged</h2></div>
+  <div id="done"><p class="empty">Approved chantiers land here.</p></div>
+</section>
+
+<footer>Rows live in this page's database (collection <code>stack</code>); agents add and update them with ArtifactData. Built with the review-stack skill.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TAGS = { waiting: ["ok", "review"], changes: ["blocked", "changes"], hold: ["draft", "hold"], approved: ["ok", "approved"], merged: ["", "merged"] };
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function list(rows) {
+    var ol = el("ol", "merge");
+    rows.forEach(function (r, i) {
+      var li = el("li"), what = el("span", "what"), a;
+      li.appendChild(el("span", "n", String(i + 1)));
+      if (/^https:\/\//.test(r.url || "")) { a = el("a", null, r.title || "Untitled"); a.href = r.url; } else { a = el("span", null, r.title || "Untitled"); }
+      what.appendChild(a);
+      var meta = [r.summary || "", r.prs ? r.prs + " PR" + (r.prs > 1 ? "s" : "") : "", r.decisions ? r.decisions + " decision" + (r.decisions > 1 ? "s" : "") : ""].filter(Boolean).join(" · ");
+      what.appendChild(el("small", null, meta));
+      li.appendChild(what);
+      var t = TAGS[r.status] || ["", r.status || "?"];
+      li.appendChild(el("span", "tag" + (t[0] ? " " + t[0] : ""), t[1]));
+      ol.appendChild(li);
+    });
+    return ol;
+  }
+  function render(rows) {
+    var todo = rows.filter(function (r) { return ["approved", "merged"].indexOf(r.status) < 0; });
+    var done = rows.filter(function (r) { return ["approved", "merged"].indexOf(r.status) >= 0; });
+    document.getElementById("n-wait").textContent = todo.filter(function (r) { return r.status === "waiting"; }).length;
+    document.getElementById("n-changes").textContent = todo.filter(function (r) { return r.status !== "waiting"; }).length;
+    document.getElementById("n-done").textContent = done.length;
+    [["todo", todo], ["done", done]].forEach(function (p) {
+      var box = document.getElementById(p[0]);
+      if (!box.dataset.empty) box.dataset.empty = box.textContent.trim();
+      box.replaceChildren(p[1].length ? list(p[1]) : el("p", "empty", box.dataset.empty));
+    });
+  }
+  if (!window.claude || !window.claude.use) return;
+  window.claude.use("db").then(function (db) {
+    if (!db) return;
+    db.collection("stack").onSnapshot(function (snap) {
+      var rows = snap.docs.map(function (d) { var v = d.data() || {}; v.id = d.id; return v; });
+      rows.sort(function (a, b) { return (a.order || 0) - (b.order || 0) || String(a.added || "").localeCompare(String(b.added || "")); });
+      render(rows);
+    });
+  });
+})();
+</script>

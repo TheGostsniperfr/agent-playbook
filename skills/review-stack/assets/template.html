@@ -1,0 +1,140 @@
+<title>@@TITLE@@</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* @artifact-style */
+/* review-stack additions */
+.pipe .field{color:var(--belt-muted)}
+.pipe .saved{color:var(--belt-muted)}
+.pipe .saved.ok{color:var(--belt-accent)}
+.vbtns{display:flex;flex-wrap:wrap;gap:8px}
+.copybox{width:100%;min-height:120px;margin-top:8px;font-family:var(--f-mono);font-size:12.5px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px}
+.banner{background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:14.5px}
+</style>
+
+<div class="wrap">
+<p class="banner" id="offline" hidden>Answers cannot be saved in this view. Open the page on claude.ai while signed in, or use "Copy my answers" at the bottom and paste them in the chat.</p>
+@@BODY@@
+</div>
+
+<script type="application/json" id="chantier-data">@@DATA@@</script>
+<script>
+/* review-stack page runtime. db layout (read back by the agent with ArtifactData):
+   answers/<decision id>  {chantier, decision, choice, text, by, at}   one doc per changed decision
+   verdict/current        {chantier, status, note, answers{id:{choice,text}}, by, at}
+   Works without db: everything renders, and "Copy my answers" gives a text summary. */
+(function () {
+  "use strict";
+  var DATA = JSON.parse(document.getElementById("chantier-data").textContent);
+  var db = null, me = null, timers = {}, busy = {}, again = {}, dirty = {};
+
+  function $(id) { return document.getElementById(id); }
+  function card(id) { return document.querySelector('[data-decision="' + id + '"]'); }
+  function current(id) {
+    var c = card(id), r = c.querySelector("input[type=radio]:checked");
+    return { choice: r ? r.value : null, text: c.querySelector("textarea").value.trim() };
+  }
+  function all() {
+    var out = {};
+    DATA.decisions.forEach(function (d) { out[d.id] = current(d.id); });
+    return out;
+  }
+  function status(el, cls, txt) { el.className = "saved" + (cls ? " " + cls : ""); el.textContent = txt; }
+  function stamp() { return new Date().toISOString(); }
+
+  function save(id) {
+    if (!db) return;
+    if (busy[id]) { again[id] = true; return; }
+    busy[id] = true;
+    var c = card(id), s = c.querySelector(".saved"), v = current(id);
+    status(s, "", "Saving...");
+    db.doc("answers/" + id).set({ chantier: DATA.id, decision: id, choice: v.choice, text: v.text, by: me, at: stamp() })
+      .then(function () { dirty[id] = false; status(s, "ok", "Saved"); })
+      .catch(function (e) { status(s, "err", "Not saved: " + (e && e.message || "error") + ". Use Copy my answers."); })
+      .then(function () { busy[id] = false; if (again[id]) { again[id] = false; save(id); } });
+  }
+
+  DATA.decisions.forEach(function (d) {
+    var c = card(d.id), ta = c.querySelector("textarea");
+    c.querySelectorAll("input[type=radio]").forEach(function (r) {
+      r.addEventListener("change", function () { dirty[d.id] = true; save(d.id); });
+    });
+    ta.addEventListener("input", function () {
+      dirty[d.id] = true; // text next to the default is a note; with "Other" it is the answer
+      clearTimeout(timers[d.id]);
+      timers[d.id] = setTimeout(function () { save(d.id); }, 900);
+    });
+    ta.addEventListener("blur", function () { if (dirty[d.id]) { clearTimeout(timers[d.id]); save(d.id); } });
+  });
+
+  function summary() {
+    var a = all(), lines = ["Chantier " + DATA.id + " (" + DATA.title + ")"];
+    DATA.decisions.forEach(function (d, i) {
+      var v = a[d.id], label = v.choice;
+      d.options.forEach(function (o) { if (o.id === v.choice) label = o.label; });
+      if (v.choice === "other") label = "Other";
+      lines.push((i + 1) + ". " + d.title + ": " + label + (v.choice === d.default ? " (default)" : "") + (v.text ? " | " + v.text : ""));
+    });
+    var note = $("v-note").value.trim();
+    if (note) lines.push("Note: " + note);
+    return lines.join("\n");
+  }
+
+  $("copy").addEventListener("click", function () {
+    var text = summary(), box = $("copy-text"), st = $("copy-status");
+    box.value = text;
+    function fallback() { box.hidden = false; box.focus(); box.select(); status(st, "", "Select all and copy."); }
+    try {
+      navigator.clipboard.writeText(text).then(function () { status(st, "ok", "Copied"); }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  function verdict(statusValue) {
+    var st = $("v-status");
+    if (!db) { status(st, "err", "Not saved in this view. Use Copy my answers."); return; }
+    status(st, "", "Saving...");
+    db.doc("verdict/current").set({ chantier: DATA.id, status: statusValue, note: $("v-note").value.trim(), answers: all(), by: me, at: stamp() })
+      .then(function () { status(st, "ok", label(statusValue) + ", saved " + new Date().toLocaleString()); mark(statusValue); })
+      .catch(function (e) { status(st, "err", "Not saved: " + (e && e.message || "error")); });
+  }
+  function label(s) { return { approved: "Approved", changes: "Needs changes", hold: "On hold" }[s] || s; }
+  function mark(s) {
+    ["v-approve", "v-changes", "v-hold"].forEach(function (id) { $(id).setAttribute("aria-pressed", $(id).dataset.status === s ? "true" : "false"); });
+  }
+  ["v-approve", "v-changes", "v-hold"].forEach(function (id) {
+    $(id).addEventListener("click", function () { verdict($(id).dataset.status); });
+  });
+
+  function fill(id, v) {
+    var c = card(id);
+    if (!c || dirty[id] || c.contains(document.activeElement)) return;
+    if (v.choice) { var r = c.querySelector('input[type=radio][value="' + v.choice + '"]'); if (r) r.checked = true; }
+    c.querySelector("textarea").value = v.text || "";
+    status(c.querySelector(".saved"), "ok", "Saved" + (v.at ? " " + new Date(v.at).toLocaleString() : ""));
+  }
+
+  function boot() {
+    if (!window.claude || !window.claude.use) { $("offline").hidden = false; return; }
+    window.claude.use("user").then(function (u) { return u ? u.id() : null; }).then(function (id) { me = id; }, function () {});
+    window.claude.use("db").then(function (handle) {
+      if (!handle) { $("offline").hidden = false; return; }
+      db = handle;
+      db.collection("answers").onSnapshot(function (snap) {
+        snap.docs.forEach(function (doc) {
+          var v = doc.data() || {};
+          if (v.chantier === DATA.id) fill(doc.id, v);
+        });
+      }, function () { $("offline").hidden = false; });
+      db.doc("verdict/current").onSnapshot(function (doc) {
+        var v = doc.exists ? doc.data() : null;
+        if (!v || v.chantier !== DATA.id) return;
+        if (document.activeElement !== $("v-note")) $("v-note").value = v.note || "";
+        status($("v-status"), "ok", label(v.status) + ", saved " + new Date(v.at).toLocaleString());
+        mark(v.status);
+      });
+    }, function () { $("offline").hidden = false; });
+  }
+  boot();
+})();
+</script>
