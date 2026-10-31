@@ -1,0 +1,38 @@
+# Deterministic checks only: no secrets, no model. Runs on every PR and on main.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.12"}
+      - name: Resolver and skill tests
+        run: |
+          python3 -m unittest discover -s overlay/tests
+          python3 -m unittest discover -s skills/review-stack/tests -k Validate -k Page -k Context -k Stack
+      - name: Base skills follow the spec
+        run: python3 overlay/agentskills validate skills
+      - name: Shell scripts
+        run: shellcheck -s sh overlay/install.sh
+  # The full build of the base (every skill, every tool) and its diff against the PR base:
+  # this is exactly what agents will read after the merge. Shown in the job summary, and the
+  # full build is attached as an artifact.
+  skills-preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: {fetch-depth: 0}
+      - name: Rendered diff
+        run: |
+          python3 overlay/agentskills preview --overlay none --base . \
+            --against "origin/${{ github.base_ref }}" --markdown --keep build/skills >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: {name: rendered-skills, path: build/skills}

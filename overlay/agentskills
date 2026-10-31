@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 API_VERSION = "agentskills/v1"
 DEFAULT_OVERLAY = ".agents/overlay.yaml"
 LOCK_NAME = "agentskills.lock"
@@ -1458,6 +1458,162 @@ def cmd_validate(args):
     return rc
 
 
+def write_export(plan, out):
+    """Write the full build: <out>/<target>/<skill>/... plus BUILD.json (sources, hashes)."""
+    rendered = build(plan)
+    lock = make_lock(plan, rendered, skills_meta_of(plan))
+    if os.path.isdir(out):
+        for n in os.listdir(out):
+            p = os.path.join(out, n)
+            if n in PROVIDERS or n == "BUILD.json":
+                shutil.rmtree(p) if os.path.isdir(p) else os.unlink(p)
+            elif not n.startswith("."):
+                raise Error("%s is not an agentskills export (found %s); pick an empty folder" % (out, n))
+    os.makedirs(out, exist_ok=True)
+    for t, skills in sorted(rendered.items()):
+        for n, files in sorted(skills.items()):
+            write_tree(os.path.join(out, t, n), files)
+    for t in lock["targets"]:
+        lock["targets"][t]["dir"] = t
+    with open(os.path.join(out, "BUILD.json"), "w") as f:
+        f.write(dump_json(lock))
+    return rendered
+
+
+def cmd_export(args):
+    plan = make_plan(args)
+    rendered = write_export(plan, os.path.abspath(args.out))
+    n = sum(len(v) for v in rendered.values())
+    print("exported %d skill folder(s) for %s into %s (BUILD.json lists sources and hashes)" % (
+        n, ", ".join(sorted(rendered)), args.out))
+    return 0
+
+
+def _export_tree(d):
+    """{target/skill/rel: (bytes, exec)} for an export dir (BUILD.json excluded)."""
+    out = {}
+    if not os.path.isdir(d):
+        return out
+    for t in sorted(os.listdir(d)):
+        td = os.path.join(d, t)
+        if t.startswith(".") or not os.path.isdir(td):
+            continue
+        for rel, v in read_tree(td).items():
+            if os.path.basename(rel) == MARKER:
+                continue
+            out[t + "/" + rel] = v
+    return out
+
+
+def diff_trees(old, new, context=3):
+    """Return (summary rows, unified diff text) between two export trees."""
+    import difflib
+    rows, chunks = [], []
+    skills = lambda tree: sorted({"/".join(k.split("/")[:2]) for k in tree})
+    so, sn = set(skills(old)), set(skills(new))
+    for sk in sorted(so | sn):
+        if sk not in so:
+            rows.append(("added", sk))
+        elif sk not in sn:
+            rows.append(("removed", sk))
+        elif any(old.get(k) != new.get(k) for k in set(old) | set(new) if k.startswith(sk + "/")):
+            rows.append(("changed", sk))
+    for k in sorted(set(old) | set(new)):
+        a, b = old.get(k), new.get(k)
+        if a == b:
+            continue
+        if a and b and a[0] == b[0]:
+            chunks.append("mode %s: %s -> %s\n" % (k, "x" if a[1] else "-", "x" if b[1] else "-"))
+            continue
+        try:
+            at = a[0].decode("utf-8").splitlines(True) if a else []
+            bt = b[0].decode("utf-8").splitlines(True) if b else []
+        except UnicodeDecodeError:
+            chunks.append("binary %s differs\n" % k)
+            continue
+        d = "".join(difflib.unified_diff(at, bt, "a/" + k if a else "/dev/null", "b/" + k if b else "/dev/null", n=context))
+        if d and not d.endswith("\n"):
+            d += "\n"
+        chunks.append(d)
+    return rows, "".join(chunks)
+
+
+def print_diff(rows, text, markdown=False, title="Rendered skills"):
+    if markdown:
+        print("### %s: what the agents will read" % title)
+        if not rows:
+            print("\nNo change in the rendered skills.")
+            return
+        print("\n| change | target/skill |\n|---|---|")
+        for r in rows:
+            print("| %s | `%s` |" % r)
+        print("\n<details><summary>Full rendered diff</summary>\n\n```diff\n%s```\n</details>" % text)
+        return
+    if not rows:
+        print("no change in the rendered skills")
+        return
+    for r in rows:
+        print("%-8s %s" % r)
+    print()
+    sys.stdout.write(text)
+
+
+def cmd_diff(args):
+    rows, text = diff_trees(_export_tree(args.old), _export_tree(args.new), args.context)
+    print_diff(rows, text, args.markdown)
+    return 1 if (rows and args.exit_code) else 0
+
+
+def _git_snapshot(project, ref, dest):
+    """Extract `ref` of the git repo containing project into dest; return the project path inside."""
+    top = _run(["git", "-C", project, "rev-parse", "--show-toplevel"])
+    rel = os.path.relpath(project, top)
+    arc = subprocess.run(["git", "-C", top, "archive", "--format=tar", ref], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if arc.returncode != 0:
+        raise Error("git archive %s failed: %s" % (ref, arc.stderr.decode("utf-8", "replace").strip()))
+    import tarfile, io
+    with tarfile.open(fileobj=io.BytesIO(arc.stdout)) as tf:
+        for m in tf.getmembers():
+            if m.name.startswith("/") or ".." in m.name.split("/"):
+                raise Error("unsafe path in archive: %s" % m.name)
+        if hasattr(tarfile, "data_filter"):
+            tf.extractall(dest, filter="data")
+        else:
+            tf.extractall(dest)
+    return os.path.normpath(os.path.join(dest, rel))
+
+
+def cmd_preview(args):
+    """Full build at a git ref vs the working tree: the exact change the agents will see."""
+    project = os.path.abspath(args.project)
+    tmp = tempfile.mkdtemp(prefix="agentskills-preview-")
+    try:
+        new_out, old_out = os.path.join(tmp, "new"), os.path.join(tmp, "old")
+        write_export(make_plan(args), new_out)
+        old_project = _git_snapshot(project, args.against, os.path.join(tmp, "src"))
+        old_args = argparse.Namespace(**vars(args))
+        old_args.project = old_project
+        if args.base and os.path.abspath(args.base).startswith(project):
+            old_args.base = os.path.join(old_project, os.path.relpath(os.path.abspath(args.base), project))
+        if args.overlay and args.overlay != "none" and os.path.isabs(args.overlay) and args.overlay.startswith(project):
+            old_args.overlay = os.path.join(old_project, os.path.relpath(args.overlay, project))
+        try:
+            write_export(make_plan(old_args), old_out)
+        except Error as e:
+            print("note: could not render %s (%s); showing everything as added" % (args.against, e), file=sys.stderr)
+        rows, text = diff_trees(_export_tree(old_out), _export_tree(new_out), args.context)
+        print_diff(rows, text, args.markdown, title="Rendered skills vs %s" % args.against)
+        if args.keep:
+            dst = os.path.abspath(args.keep)
+            if os.path.exists(dst):
+                shutil.rmtree(dst)
+            shutil.copytree(new_out, dst)
+            print("full build kept in %s" % dst, file=sys.stderr)
+        return 1 if (rows and args.exit_code) else 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 INIT_TEMPLATE = """# Overlay: which generic skills this project uses and what it changes in them.
 # Rendered by `agentskills render` into each tool's skills folder; `agentskills check` in CI.
 # Format: skills/DESIGN.md in https://github.com/TheGostsniperfr/agent-playbook
@@ -1542,6 +1698,22 @@ def main(argv=None):
     p.add_argument("--force", action="store_true")
     p = sub.add_parser("clean", help="remove every folder agentskills manages in the targets")
     common(p)
+    p = sub.add_parser("export", help="write the full build (every target, fully patched) into a folder, with BUILD.json")
+    common(p)
+    p.add_argument("--out", required=True, help="folder to write (created; only export content is replaced)")
+    p = sub.add_parser("diff", help="unified diff between two export folders")
+    p.add_argument("old")
+    p.add_argument("new")
+    p.add_argument("--markdown", action="store_true", help="GitHub-flavoured summary (for $GITHUB_STEP_SUMMARY)")
+    p.add_argument("--context", type=int, default=3)
+    p.add_argument("--exit-code", action="store_true", help="exit 1 when something changed")
+    p = sub.add_parser("preview", help="full build at a git ref vs the working tree: the change agents will see")
+    common(p)
+    p.add_argument("--against", default="origin/main", help="git ref to compare with (default origin/main)")
+    p.add_argument("--markdown", action="store_true")
+    p.add_argument("--context", type=int, default=3)
+    p.add_argument("--keep", help="also copy the new full build into this folder")
+    p.add_argument("--exit-code", action="store_true")
 
     args = ap.parse_args(argv)
     try:
@@ -1559,6 +1731,12 @@ def main(argv=None):
             return cmd_init(args)
         if args.cmd == "clean":
             return cmd_clean(args)
+        if args.cmd == "export":
+            return cmd_export(args)
+        if args.cmd == "diff":
+            return cmd_diff(args)
+        if args.cmd == "preview":
+            return cmd_preview(args)
         ap.print_help()
         return 2
     except Error as e:
