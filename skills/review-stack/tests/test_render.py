@@ -93,5 +93,44 @@ class Browser(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+
+class Context(unittest.TestCase):
+    """Every decision must be readable cold (Brian could not answer a bare 'force-with-lease')."""
+
+    def test_why_is_required(self):
+        d = copy.deepcopy(EXAMPLE)
+        del d["decisions"][0]["why"]
+        self.assertTrue(any("missing why" in e for e in render.check(d)))
+
+    def test_unexplained_jargon_fails(self):
+        d = copy.deepcopy(EXAMPLE)
+        dec = [x for x in d["decisions"] if x["id"] == "force-with-lease"][0]
+        dec["context"] = "Plain --force and anything aimed at main stay blocked; we propose force-with-lease on feature branches only."
+        errs = render.check(d)
+        self.assertTrue(any("explain 'force-with-lease'" in e for e in errs), errs)
+
+    def test_lint_card(self):
+        bad = {"title": "T", "summary": "s", "status": "ready", "links": [{"label": "x", "url": "http://x"}],
+               "decisions": [{"id": "force", "q": "Force-with-lease on feature branches?", "options": ["Yes", "No", "Other"], "default": "Yes"}]}
+        errs = render.lint_card(bad)
+        self.assertTrue(any("missing why" in e for e in errs))
+        self.assertTrue(any("Other" in e for e in errs))
+        self.assertTrue(any("https" in e for e in errs))
+        good = dict(bad, links=[{"label": "x", "url": "https://x"}], decisions=[{
+            "id": "force", "q": "Force-with-lease on feature branches?", "options": ["Yes", "No"], "default": "Yes",
+            "why": "Force-with-lease means: overwrite my own PR branch only if nobody else pushed since I looked."}])
+        self.assertEqual(render.lint_card(good), [])
+
+
+class Stack(unittest.TestCase):
+    def test_stack_moves_to_the_next_card(self):
+        with open(os.path.join(SKILL, "assets", "stack.html"), encoding="utf-8") as f:
+            s = f.read()
+        self.assertIn('id="card-${esc(it.id)}"', s)
+        self.assertIn("scrollIntoView", s)
+        self.assertIn("prefers-reduced-motion", s)
+        self.assertIn("@keyframes unfold", s)
+        self.assertIn("safeUrl", s)
+
 if __name__ == "__main__":
     unittest.main()
