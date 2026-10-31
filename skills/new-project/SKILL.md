@@ -11,6 +11,13 @@ metadata:
 
 Specs before code. The owner decides the vision and the trade-offs; agents do the rest.
 
+## 0. Continuity first
+Before anything else, propose the continuity pack
+([`../resume/references/continuity-pack.md`](../resume/references/continuity-pack.md)): a
+private ops repo with `STATE.md` (or, until it exists, `STATE.md` in the claude.ai Project docs)
+and a `START-HERE.md`. Write the first `STATE.md` right after the interview, so the very next
+chat can resume this project.
+
 ## 1. Interview (one message, defaults filled in)
 Ask once, in the owner's language, with your best guesses pre-filled
 ([references/interview.md](references/interview.md)): the idea in one sentence, users, the

@@ -27,7 +27,12 @@ for an idea with no code yet, use `new-project` first.
 Build a Chantier 0 page with the `review-stack` skill: one decision per item, default on,
 each with a plain `why`. Standard items (details and defaults:
 [references/setup-items.md](references/setup-items.md)):
-1. Private ops repo `<org>/ops` + `STATE.md` + the review stack page (owner creates the repo).
+1. **Continuity pack (always first, always on):** so any new chat or agent resumes in seconds.
+   See [`../resume/references/continuity-pack.md`](../resume/references/continuity-pack.md).
+   Private ops repo `<org>/ops` with `STATE.md` (owner creates the repo), the review stack page,
+   a "Resuming" line in every AGENTS.md, a SessionStart hook that prints the STATE head, the
+   `handoff` hooks (PreCompact, SessionEnd), and, when the owner uses claude.ai Projects, a
+   `START-HERE.md` + a copy of `STATE.md` in the Project docs.
 2. Audit per component (evidence report, proposed tickets, at most 5 questions each).
 3. Foundation per repo: README, AGENTS.md map, Makefile verbs (`setup`, `check`, `test`, `fmt`,
    `lint`), CI, issue and PR templates. No behaviour change.
