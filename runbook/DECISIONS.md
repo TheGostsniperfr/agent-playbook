@@ -9,7 +9,7 @@ https://github.com/Arffornia/docs/tree/main/docs/decisions. Status: **accepted**
 | # | Context | Decision | Alternatives | Status |
 |---|---|---|---|---|
 | D01 | Solo owner, little time, 12 repos | Agents do the work; owner decides and validates | Owner codes with AI assist | accepted |
-| D02 | Irreversible actions, public repos | Agents never merge, tag, release, delete branches, change settings, touch secrets | Trusted agent with admin token | accepted |
+| D02 | Irreversible actions, public repos | Agents never merge, tag, release, delete branches, change settings, touch secrets, except merge/deploy inside an owner-approved chantier (D36) | Trusted agent with admin token | accepted (amended by D36) |
 | D03 | Owner did not want to merge PRs one by one | Owner validates **chantiers** (PRs + decisions on one page); an orchestrator merges them | Owner merges each PR; auto-merge on green | accepted (wave 3) |
 | D04 | Owner refused API keys in GitHub | No AI job in CI; AI review runs in the agent's session at task end | Claude GitHub App + secret; managed Code Review | accepted (wave 3) |
 | D05 | Mixed French/English history, FR/EN players | English for code, docs, issues, PRs; i18n `en`+`fr` for every user-visible string ([ADR-0002](https://github.com/Arffornia/docs/blob/main/docs/decisions/0002-english-codebase-bilingual-players.md)) | French codebase; English-only players | accepted |
@@ -31,7 +31,7 @@ https://github.com/Arffornia/docs/tree/main/docs/decisions. Status: **accepted**
 | D16 | Six stacks, different commands | Makefile verbs `check/test/build/lint/fmt` in every repo | Per-stack scripts; Taskfile; just | applied |
 | D17 | Overlapping fixes in same files | Stacked PRs, merged with merge commits in a given order | Squash; one big PR per repo | applied |
 | D18 | Foundation must be safe to merge | Foundation PR changes no behaviour; behaviour changes need a ticket | Fix while tidying | applied |
-| D19 | Kanban columns overflowed | Two lanes: agents pull ready issues; owner pops a chantier queue (WIP 3) with page links | Classic kanban | proposed |
+| D19 | Kanban columns overflowed | Two lanes: agents pull ready issues; owner pops a chantier queue with page links. No hard WIP cap (owner reviews in evening and weekend batches); soft review-load indicator; proposals never expire | Classic kanban; WIP 3 (rejected by the owner, Oct 31) | accepted (amended) |
 | D20 | Owner answers from phone | Decision pages: Agree / Other / Later + text + voice; answers stored and read back | Answers in chat; GitHub comments | proposed |
 
 ## Harness
@@ -44,7 +44,7 @@ https://github.com/Arffornia/docs/tree/main/docs/decisions. Status: **accepted**
 | D24 | Review cost: 5 Opus runs per PR, 8 when sensitive | Opus for main work and verification; Haiku for mechanical subagents; raise effort before model; review once at task end | Opus everywhere; Sonnet everywhere | proposed |
 | D25 | Codex/OpenCode use too | Open SKILL.md standard, synced to `.agents/skills` | Claude-only plugin | applied |
 | D26 | Sandbox in template | On by default with a registry allow-list | Opt-in | proposed |
-| D27 | Force-push needs | `--force-with-lease` allowed on feature branches only | Block all force | proposed |
+| D27 | Agents must update their own PR branch after a rebase | `--force-with-lease` (overwrite my branch only if nobody pushed since I looked) allowed on the agent's own feature branches only; plain `--force` and default branches blocked | Block all force (then merge main into the branch instead) | proposed: explain in plain words when asking ([WORKFLOW.md](WORKFLOW.md)) |
 | D28 | Website layering guard | deptrac forbids controllers → Eloquent; route-model binding question open | Allow `Model` in controllers | proposed |
 | D29 | Unfixed security findings as eval cases | Held out of the public repo until fixed | Commit with neutral wording | proposed |
 | D30 | Work-ticket skill and pushing | Skill stops before push; `/publish` is manual | Agent opens draft PRs itself | proposed |
@@ -61,3 +61,18 @@ https://github.com/Arffornia/docs/tree/main/docs/decisions. Status: **accepted**
 
 Full list of 34 product decisions with defaults: the Chantier 0 handover page
 https://claude.ai/artifact/D35xReunfKfovJYNyL4wzi (private to the owner).
+
+## Wave 4 (2026-10-31)
+
+| # | Context | Decision | Alternatives | Status |
+|---|---|---|---|---|
+| D36 | Owner wants agents to open PRs themselves | Seven-step workflow ([WORKFLOW.md](WORKFLOW.md)): agents propose, spec, implement, open PRs, review; owner validates the chantier; agents merge and deploy only approved chantiers | Owner publishes PRs by hand | accepted |
+| D37 | Personal project budget | No paid services: free tiers, open source, self-hosted; a domain name or a few euros over a long period at most | Paid SaaS where convenient | accepted |
+| D38 | A new chat lost what a long chat knew | Live state in `STATE.md` in a private ops repo; `handoff` writes it, `resume` reads it; project docs hold a copy | Rely on chat memory | proposed |
+| D39 | Same actions repeated across sessions | "Done twice -> skill": three sensors (in session, transcript scanner, feedback loop) and `propose-skill` | Ad hoc | proposed |
+| D40 | Recurring automations cost tokens | Brief weekly (Friday evening); non-critical upkeep monthly; skip a run when nothing changed since the last one; manual "run all now" | Daily runs | accepted |
+| D41 | Publish tokens in CI | Trusted publishing (OIDC), no stored token ([patterns/no-secret-publishing.md](patterns/no-secret-publishing.md)) | `NPM_TOKEN` secret | proposed |
+| D42 | New repos in an org that already has a naming scheme | Follow the org's existing repo naming convention (e.g. `Arffornia_Assets` next to `Arffornia_Launcher`); a deliberate exception (like `ops`) is noted where repos are listed | Generic names chosen by the agent | accepted |
+| D43 | Secrets edited by hand in Vault drifted from the code | Every secret-store change goes through IaC (Vault via Terraform); values never in git; agents write the PR, the owner applies ([patterns/secrets-through-iac.md](patterns/secrets-through-iac.md)) | Hand edits with a log | accepted |
+| D44 | Owner authorised an agent to merge | Authorised agents merge only approved chantiers, via the REST API, with merge commits; PRs held for a playtest wait ([WORKFLOW.md](WORKFLOW.md)) | Squash merges; merge on green | accepted |
+| D45 | Budget rule restated by the owner | "The owner pays for nothing except a domain name"; any other cost is an owner decision with a free alternative | D37's "a few euros over a long period" as a default | accepted (refines D37) |
