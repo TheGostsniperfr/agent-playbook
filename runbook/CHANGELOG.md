@@ -4,6 +4,11 @@ Format: date · page · change · source. See [MAINTAIN.md](MAINTAIN.md) for ver
 
 ## Unreleased
 
+- WORKFLOW.md · merge authority: only authorised agents, only approved chantiers, REST API, merge commits, playtest holds · D44
+- WORKFLOW.md, README rule 11 · money: the owner pays for nothing except a domain name · D45
+- patterns/secrets-through-iac.md, phase 7 · secret-store changes go through IaC (Vault via Terraform) · D43
+- skills/bootstrap · follow the org's existing repo naming convention · D42
+
 ## 0.2.0 · 2026-10-31
 
 - WORKFLOW.md, START.md, patterns/ (live state, publishing without secrets, deterministic guards) · new

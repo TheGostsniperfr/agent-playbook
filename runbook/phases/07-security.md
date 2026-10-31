@@ -23,7 +23,9 @@ allow-list; hooks run outside it, deny rules apply before it.
 1. **Sweep:** list open `type: security` + `agent-ready` issues not covered by an open PR; fix them
    in priority order, each with tests that fail without the fix.
 2. **Secrets:** gitleaks (pinned binary with checksum) in CI and pre-commit; move runtime secrets to
-   server-only config or the secret store; placeholders in committed config.
+   server-only config or the secret store; placeholders in committed config. Every change to the
+   secret store goes through IaC, e.g. Vault via Terraform
+   ([patterns/secrets-through-iac.md](../patterns/secrets-through-iac.md)); never by hand.
 3. **Supply chain:** temp file, verify hash, then rename, for every download (Java runtime,
    mod loader, mods); pin images by digest and actions by version.
 4. **Boundaries:** validate every input crossing a trust boundary (HTTP, IPC, network packets,
