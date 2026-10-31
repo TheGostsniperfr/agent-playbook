@@ -87,6 +87,16 @@ in
         the same name. Projects then need the opencode target in their overlay.
       '';
     };
+    globalInstructions = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Install overlay/global/AGENTS.md as the user-level instructions of each target
+        (~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ~/.config/opencode/AGENTS.md): every session
+        looks for live project state and runs `resume`, or proposes `bootstrap`/`new-project`
+        with the continuity pack first. Turn off if you manage those files yourself.
+      '';
+    };
     installResolver = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -96,6 +106,12 @@ in
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
     { home.packages = lib.optional cfg.installResolver p.agentskills; }
+    (lib.mkIf cfg.globalInstructions {
+      home.file =
+        lib.optionalAttrs (lib.elem "claude" cfg.targets) { ".claude/CLAUDE.md".source = "${cfg.source}/overlay/global/AGENTS.md"; }
+        // lib.optionalAttrs (lib.elem "codex" cfg.targets) { ".codex/AGENTS.md".source = "${cfg.source}/overlay/global/AGENTS.md"; }
+        // lib.optionalAttrs (lib.elem "opencode" cfg.targets) { ".config/opencode/AGENTS.md".source = "${cfg.source}/overlay/global/AGENTS.md"; };
+    })
     (lib.mkIf (cfg.opencodeIgnoreExternal && lib.elem "opencode" cfg.targets) {
       home.sessionVariables.OPENCODE_DISABLE_EXTERNAL_SKILLS = "1";
     })

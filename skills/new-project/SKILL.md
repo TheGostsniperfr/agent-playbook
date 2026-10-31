@@ -3,13 +3,20 @@ name: new-project
 description: "Onboard a brand-new project from an idea: one batched interview with defaults, a one-page vision (users, problem, scope by milestone, constraints including free-only tooling), architecture options as ADRs, repo and org layout, the first milestone's spec and agent-ready issues, then hand over to bootstrap so the method is in place from day one. Use when the owner has an idea but no code ('nouveau projet', 'I want to build...', 'start a project from scratch', 'onboard a new project'), or asks how to start a project with agents."
 compatibility: "Works in any chat for the interview and specs; creating repos needs gh and owner rights (or the owner clicks)."
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: "Brian Perret"
 ---
 
 # New project (from idea to first milestone)
 
 Specs before code. The owner decides the vision and the trade-offs; agents do the rest.
+
+## 0. Continuity first
+Before anything else, propose the continuity pack
+([`../resume/references/continuity-pack.md`](../resume/references/continuity-pack.md)): a
+private ops repo with `STATE.md` (or, until it exists, `STATE.md` in the claude.ai Project docs)
+and a `START-HERE.md`. Write the first `STATE.md` right after the interview, so the very next
+chat can resume this project.
 
 ## 1. Interview (one message, defaults filled in)
 Ask once, in the owner's language, with your best guesses pre-filled
@@ -30,7 +37,8 @@ written as ADRs (`docs/decisions/NNNN-*.md`). Prefer boring, light, self-hostabl
 when a heavier one is justified. Research current practice with dated sources.
 
 ## 4. Layout and specs
-- Repo plan: names, what lives where, the docs repo, the private ops repo.
+- Repo plan: names (one naming convention for the org, e.g. `Org_Thing`; follow the existing
+  one when the org already has repos), what lives where, the docs repo, the private ops repo.
 - M0 spec: user stories with acceptance criteria, the first diagram, test strategy (what runs
   on every PR, what nightly), the deterministic guards for the chosen stack.
 - Agent-ready issues for M0, each small and independently verifiable.

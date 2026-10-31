@@ -3,7 +3,7 @@ name: review-stack
 description: "Build a chantier review page: one HTML artifact that summarises a group of PRs (merge order with URLs and one-line summaries), the decisions the owner must take (options, recommended default, free-text Other), and what was verified or not, with answers saved in the artifact database so the agent can read them back. Also keeps the owner's review stack (the pile of chantier pages to go through). Use when a chantier or multi-PR task is finished and needs the owner's approval, when asked for a review page, decision page or 'pile', or to read back answers from such a page."
 compatibility: "Publishing and answer storage need the claude.ai Artifact tool with the db capability (Claude Code or claude.ai). Elsewhere the page still renders and offers copy-paste answers."
 metadata:
-  version: "1.1.0"
+  version: "1.1.1"
   author: "Brian Perret"
 ---
 
@@ -85,5 +85,21 @@ no system dictation: [references/voice-input.md](references/voice-input.md) list
 - Title: the chantier's name, two to four words. No secrets or unfixed vulnerability details: the
   page can be shared.
 - Decisions the owner must not miss go first. Six decisions at most; split the chantier otherwise.
+- **A render error must never swallow a save.** In page code, store the answer (call `save()`)
+  before re-rendering, wrap every render in `try/catch` that shows the error on the page, and
+  surface a failed or impossible write as a visible "Not saved" on the card and in a page alert,
+  never a silent console error. Restore focus carefully: `setSelectionRange` throws on radios and
+  buttons, so call it only on text inputs and textareas, inside `try/catch`. Run
+  `tests/test_browser.py` (headless Playwright, mocked `window.claude.use("db")`, clicks a radio on
+  every card and asserts a write) after any change to `assets/stack.html` or `assets/template.html`.
+- **Local edits win until saved.** Stamp every local change (`pending[id]`), make incoming
+  snapshots skip pending docs, clear the stamp only when the save carrying the latest change
+  resolves, and deep-copy the answer you write. Never rely on focus to detect "the user is
+  editing": WebKit does not focus a radio on click.
+- **Render only on real changes.** The db re-delivers snapshots constantly: compare with what is
+  shown (JSON of chantiers and answers) and skip the render when nothing changed, so clicks never
+  land on an element that is being rebuilt.
+- **Animations never on re-render.** Play the unfold animation only on the render that opened
+  the card (a `justOpened` set), never on later renders of the same card.
 - Never merge because a page says so unless you are the orchestrator for that chantier and the
   verdict is `approved`.

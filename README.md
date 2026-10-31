@@ -65,3 +65,18 @@ and a CI drift check.
 
 `mkdocs.yml` + `docs/` (pages, Noodle diagrams in `docs/architecture/system/`, rendered in
 `docs/diagrams/`). Local preview: `pip install -r requirements-docs.txt && mkdocs serve`.
+
+## Making it public (owner only)
+
+The repo is meant to be public. Agents were refused when they tried to change its visibility,
+so Brian does these two steps himself, in this order:
+
+1. **Settings > General > Danger Zone > Change visibility > Public** (done 2026-10-31). Before flipping, check that
+   nothing private is in the history: live state belongs in the private ops repo, never here.
+2. **Settings > Pages > Build and deployment > Source: GitHub Actions.** The docs site workflow
+   (`.github/workflows/pages.yml`, once merged) then publishes on the next push to `main`.
+   GitHub Pages is free for public repos only, which is why step 1 comes first.
+
+## Licence
+
+[MIT](LICENSE), copyright Brian Perret.
