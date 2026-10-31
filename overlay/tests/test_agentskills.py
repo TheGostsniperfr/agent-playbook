@@ -359,6 +359,11 @@ class Repo(unittest.TestCase):
         self.assertEqual(read(TOOL), read(os.path.join(REPO, "skills", "overlay-apply", "scripts", "agentskills")),
                          "copy overlay/agentskills to skills/overlay-apply/scripts/agentskills")
 
+    def test_shared_copies_are_identical(self):
+        for a, b in (("handoff/references/state-format.md", "resume/references/state-format.md"),
+                     ("handoff/scripts/state_lint.py", "resume/scripts/state_lint.py")):
+            self.assertEqual(read(os.path.join(REPO, "skills", a)), read(os.path.join(REPO, "skills", b)), "copy %s to %s" % (a, b))
+
     def test_runs_as_script(self):
         out = subprocess.run([sys.executable, TOOL, "--version"], stdout=subprocess.PIPE).stdout.decode()
         self.assertIn("agentskills 1.0.0", out)

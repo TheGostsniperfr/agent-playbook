@@ -52,6 +52,13 @@ Replace status columns with a graph: blockers, parent/child, `ready` = no open b
 claim; hash IDs that do not collide across branches; old closed items summarised ("memory decay").
 On GitHub: sub-issues and "blocked by" links plus a `ready` query in the start card.
 Source: Steve Yegge, Beads, https://github.com/steveyegge/beads
+Evaluation (2026-10-31): Beads (`bd`, MIT, ~28k stars) stores issues in Dolt (a versioned SQL
+database) inside `.beads/`, synced through a git ref; `bd ready`, atomic `--claim`, dependency
+links, messages between agents. It has no GitHub Issues sync. Verdict: **complement, not
+replace**. GitHub issues stay the shared record (humans, PRs that close issues, links on the
+review stack); Beads fits as an agent's scratch queue for a multi-step chantier, kept in the
+ops repo, and only once several agents run in parallel on the same chantier. Trial on one
+chantier before adopting.
 
 ## 5. Harness ablation when models change
 Harness components encode assumptions about model weaknesses that go stale (a context-reset
