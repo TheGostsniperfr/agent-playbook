@@ -9,7 +9,7 @@ and every column fills up. Split the board into two lanes with different rules.
 | Lane | Who works it | Unit | Rule |
 |---|---|---|---|
 | **Work lane** | Agents | Issue (one outcome, acceptance criteria) | Pull the next *ready* issue: `agent-ready`, no open blocker, highest priority |
-| **Attention lane** | The owner | Chantier page | A short stack, ordered by what unblocks the most work; WIP limit 3 |
+| **Attention lane** | The owner | Chantier page | A short stack, ordered by what unblocks the most work; no hard cap, a soft review-load indicator (cards waiting, estimated minutes) |
 
 ## Decisions to take
 
@@ -18,7 +18,8 @@ and every column fills up. Split the board into two lanes with different rules.
 | Tracker | GitHub issues in the repo they change + one org Project ([ADR-0004](https://github.com/Arffornia/docs/blob/main/docs/decisions/0004-github-issues-as-tracker.md)) | Agents and contributors live on GitHub; Notion keeps long-form ideation only |
 | Labels | `type:*`, `area:*`, `priority:P0-P3`, `effort:S/M/L`, plus `agent-ready` / `needs-decision` / `proposal` | The labels *are* the routing: agents take `agent-ready`, never `needs-decision` |
 | Milestones | M1 Foundation & security, M2 Tests & CI, M3 Product foundations | Coarse order without sprint ceremony |
-| New ideas from agents | `proposal` issues; only the owner promotes them | The owner asked for proposals, not additions |
+| New ideas from agents | `proposal` issues; only the owner promotes them; they never expire (dormant after 30 days, resurfaced in the next brief) | The owner asked for proposals, not additions, and works in batches with long pauses |
+| Agent work queue tool | GitHub issues stay the source of truth; a dependency-graph queue such as Beads is optional agent scratch memory inside one chantier (see IDEAS #4) | Humans, PRs and links live on GitHub; Beads has no GitHub Issues sync |
 | Board filling | Scheduled Action syncing every open issue and PR (GraphQL inside Actions, scoped PAT) | The session had no GraphQL |
 | Unit of human review | **Chantier page** (artifact or doc): what it is, PRs in merge order, decisions with a recommended default, what was verified and what was not | The owner refused to review and merge PRs one by one |
 | Who merges | An orchestrator agent merges a chantier after the owner validates it | Validation is the human act; clicking merge is not |

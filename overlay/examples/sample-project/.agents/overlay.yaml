@@ -16,7 +16,7 @@ skills:
       - add_files:
           references/project.md: .agents/overlay/review-stack/project.md
   - name: overlay-apply
-    version: ~1.0
+    version: ~1.1
     description: "Set up or update this repo's skills overlay and render it (sample project)."
   - name: artifact-style
 local:

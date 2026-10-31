@@ -3,7 +3,7 @@ name: overlay-apply
 description: "Set up or update a project's skills overlay: pick generic skills from Brian's agent-playbook base, pin their versions, patch only what differs for this project, and render them for Claude Code (.claude/skills), Codex (.agents/skills) and OpenCode (.opencode/skills) with the agentskills resolver, lockfile and CI drift check. Use when asked to add, update, patch or sync shared skills in a repo, to fix an 'agentskills check' failure, or to change a generic skill for one project."
 compatibility: "Needs python3 (3.8+) and git."
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: "Brian Perret"
 ---
 
@@ -44,6 +44,21 @@ either.
   `CHANGELOG.md` in the base, adapt the patches, then raise the pin.
 - `agentskills check` fails in CI: someone edited rendered files or the overlay without
   rendering. Move the edit into the overlay (or the base), run `agentskills render`, commit.
+
+## Full build and change preview
+The rendered skills are exactly what the agent reads, like rendered Kubernetes manifests are
+exactly what the API server gets. So review the render, not only the patch:
+- `agentskills export --out build/skills`: the full build (every target, every layer applied)
+  plus `BUILD.json` (sources and hashes). Use it to share or archive a snapshot.
+- `agentskills preview --against origin/main [--markdown]`: renders the working tree and the
+  ref, prints the per-skill summary and the unified diff of the rendered files. Paste the
+  `--markdown` output in the PR body when a change touches skills or an overlay layer.
+- `agentskills diff OLD NEW`: the same diff between two export folders (for example the build
+  before and after `agentskills update`).
+- CI: copy `overlay/ci/skills-preview.yml` from the base; it writes the preview to the job
+  summary and attaches the full build. In the base itself, `ci.yml` does the same.
+- A change in an upper layer (base or org layer) changes every project that extends it: run
+  `preview` in one or two consumer repos before merging it, and paste their summaries too.
 
 ## Where a change belongs
 - Useful to any project: change the base skill in agent-playbook, bump `metadata.version`

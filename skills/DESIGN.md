@@ -101,6 +101,9 @@ agentskills check [--offline]          exit 1 on hand edits (vs lock) or drift (
 agentskills list [--json]              effective skills: target, version, variant, patches
 agentskills validate <dirs>            spec rules + per-tool limits, variants included
 agentskills clean                      remove what it manages
+agentskills export --out DIR           full build of every target into DIR, plus BUILD.json
+agentskills preview --against REF      full build at REF vs the working tree, unified diff
+agentskills diff OLD NEW               diff two export folders (--markdown, --exit-code)
 --user  --dest DIR --target t  --base PATH  --overlay FILE|none  --force  --plugin  --prefix
 ```
 - Base resolution: `--base` > `$AGENTSKILLS_BASE` > the overlay's `base`. Git sources are
@@ -166,7 +169,16 @@ programs.agent-playbook = {
 `~/.local/share/agent-playbook`, links `~/.local/bin/agentskills`, renders the user level;
 re-run to update, `--uninstall` to remove.
 
-## 9. CI in a project
+## 9. Full build and preview (the Kubernetes-manifest rule)
+The rendered `SKILL.md` and its files are the agent's real input, so every change is reviewed as
+a rendered diff. `export` writes the full build (all targets, all layers) with `BUILD.json`
+(sources, commits, tree hashes); `preview --against <ref>` extracts the ref with `git archive`,
+renders both sides with the same resolver and prints a per-skill summary plus a unified diff
+(`--markdown` for a PR body or `$GITHUB_STEP_SUMMARY`, `--keep DIR` to keep the new build).
+A ref that cannot be rendered (no overlay yet) shows everything as added. The base runs this in
+`.github/workflows/ci.yml`; projects copy `overlay/ci/skills-preview.yml`.
+
+## 10. CI in a project
 ```yaml
 - uses: actions/checkout@v5
 - run: python3 .claude/skills/overlay-apply/scripts/agentskills check
@@ -176,7 +188,7 @@ No secrets, no model. Use `--offline` when the runner cannot fetch the base. Off
 tests when the CLIs are installed: `codex debug prompt-input hi`, `opencode debug skill`,
 `claude plugin validate .claude/skills`.
 
-## 10. Arffornia's agent-kit
+## 11. Arffornia's agent-kit
 agent-kit stays the Arffornia plugin and becomes the **org layer**:
 1. Generic skills move to (or stay in) this base; Arffornia-specific wording moves into
    `agent-kit/overlay/arffornia.yaml` as patches (see `overlay/examples/org-layer/`).
@@ -190,7 +202,7 @@ agent-kit stays the Arffornia plugin and becomes the **org layer**:
 4. The plugin's `_shared/reporting.md` copy-sync becomes an `add_files` or `append_section` in
    the org layer.
 
-## 11. Limits
+## 12. Limits
 - Codex and OpenCode still show the user-level `playbook-` copies next to a project's own copies
   (different names, so no ambiguity, but more entries in the listing).
 - `replace_section` matches heading text; renaming a heading in the base is a breaking change

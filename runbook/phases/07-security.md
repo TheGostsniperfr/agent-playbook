@@ -38,16 +38,17 @@ allow-list; hooks run outside it, deny rules apply before it.
 
 ## Anti-patterns we hit
 
-- **A service-account secret committed since the first commit** of a public repo. The PR only
-  removes it from defaults; the owner must rotate. Put rotation at the top of the owner's actions.
+- **A credential committed in a public repo's first commit.** Removing it from defaults is not
+  enough; the owner must rotate it. Put rotation at the top of the owner's actions, with steps.
 - **Security fixes that must deploy together** (mod config split + provisioning templates).
   Say "merge and deploy together" on both PRs and in the chantier.
-- **Debug pages live in production** via a ConfigMap; the pod does not restart on ConfigMap
-  change. The PR must say "restart by hand" and how to check (error page shows no stack trace).
+- **A debug flag set in a ConfigMap**: the pod does not restart on a ConfigMap change, so a fix
+  needs "restart by hand" in the PR and a way to check (error page shows no stack trace).
 - **Default-deny network policies** can cut traffic: kept as a draft with a Hubble-based check.
 - **Unpinned "latest" image**: pinning to the same digest still restarts pods (template change).
   Merge in a quiet window.
-- **Shared Vault role for every namespace**: a prerequisite to fix before preview environments.
+- **One secrets-store role shared by every namespace**: isolate per namespace before adding
+  preview environments.
 
 ## Checklist
 
