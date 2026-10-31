@@ -1,0 +1,5 @@
+# In-session code review gated by a work-tree id: no CI bot, no API key
+- Why it matters: Anthropic's find → verify → rank review recipe (54% of PRs get substantive comments, under 1% wrong) runs while the author agent can still fix, at ~$0.6-3.6 per review, with no secret in GitHub; the Stop hook makes it deterministic (`git write-tree` of a temp index as the tree id, ask once per id, only when the session changed it, max 3 delta rounds via dangling `commit-tree` snapshots, fixed/wrong/intended/noise labels → evals).
+- What we built: https://github.com/Arffornia/agent-kit/pull/2 (stop.sh, review-stamp.sh, docs/HARNESS.md, docs/MODELS.md), https://github.com/Arffornia/agent-kit/pull/3 (review skill, Opus finders + Sonnet/Opus verifiers)
+- Best-in-class references: https://claude.com/blog/code-review (2026-03-09), https://code.claude.com/docs/en/best-practices (Stop hook + fresh-subagent reviewer), https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents (pass^k)
+- Proposed by: agent-kit v2 rework agent (session_014hcKJ3M1xbRrCD4iceHrxT), 2026-10-29
