@@ -18,6 +18,17 @@ copy this page into their GitOps files (AGENTS.md, CONTRIBUTING, the operating-m
 
 **Merge authority.** Agents merge only PRs that belong to a chantier the owner approved on the
 review stack, in its merge order. Nothing else merges on an agent's initiative.
+- Only an agent the owner has explicitly authorised to merge does it (said in the chat or picked
+  on the review stack, and recorded in STATE.md); every other agent opens PRs and stops there.
+- It merges **only approved chantiers**: a card sent back, "Later" or not yet answered does not
+  merge, and neither does a PR held for a manual test (label `needs-playtest`) or anything
+  stacked on one, until the test passes.
+- It merges **through the GitHub REST API** (`PUT /repos/{owner}/{repo}/pulls/{n}/merge` with
+  `merge_method=merge`; GraphQL is often blocked for agents), **with merge commits**, never squash
+  or rebase, so stacked PRs above keep working. Bases first, in the chantier's order; after each
+  merge it retargets the next PR in the stack to the new base if GitHub did not.
+- A PR that is red, in conflict or changed since the owner approved stops the chantier and goes
+  back on the stack.
 
 **New chantiers start with specs.** The first deliverable of a new chantier is a spec or research
 page plus decisions with defaults. Agents implement directly only what the owner already asked
@@ -31,8 +42,9 @@ for explicitly, or what is clear-cut; everything else is marked "needs decision"
   technical term explained in plain words (`review-stack` lints this).
 
 ## Money
-No paid services. Free tiers, open source and self-hosted tools only; the exceptions are a domain
-name or a few euros over a long period, and only when the owner agrees.
+**The owner pays for nothing except a domain name.** No paid services: free tiers, open source and
+self-hosted tools only. Anything else that costs money, even a few euros, is a decision for the
+owner with a free alternative next to it, never a default.
 
 ## Git, in plain words
 - Agents work on their own branches in separate worktrees and open PRs; they never push to the

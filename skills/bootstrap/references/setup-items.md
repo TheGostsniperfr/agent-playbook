@@ -2,7 +2,7 @@
 
 | Item | Default | Why | Owner action |
 |---|---|---|---|
-| Ops repo `<org>/ops` (private) with `STATE.md` | on | A new chat resumes from one file; public repos stay free of live state | Create the private repo |
+| Ops repo `<org>/ops` (private; or the org's naming convention if the owner prefers) with `STATE.md` | on | A new chat resumes from one file; public repos stay free of live state | Create the private repo |
 | Review stack page | on | One queue of chantiers instead of PR-by-PR review | None (agent publishes) |
 | Audit per component | on | Evidence before changes; questions batched | Answer the batched questions |
 | Foundation per repo | on | Every repo has the same verbs, so agents and humans run `make check` everywhere | Validate the foundation chantier |

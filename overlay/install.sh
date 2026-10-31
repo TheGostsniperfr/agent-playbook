@@ -74,5 +74,13 @@ case ",$targets," in
       printf 'reads the Claude and Codex copies and picks one at random when names repeat.\n'
     fi ;;
 esac
+# Global instructions: never overwrite a file the user already has; print how to include ours.
+for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.config/opencode/AGENTS.md"; do
+  if [ -e "$f" ]; then
+    grep -q 'agent-playbook' "$f" 2>/dev/null || printf 'Keeping your %s; append %s to it for session continuity by default.\n' "$f" "$dir/overlay/global/AGENTS.md"
+  else
+    mkdir -p "$(dirname "$f")" && cp "$dir/overlay/global/AGENTS.md" "$f"
+  fi
+done
 printf 'Done. Claude Code shows these skills as /playbook:<name>; Codex and OpenCode as playbook-<name>.\n'
 printf 'Re-run this script to update; start a new agent session to pick up new skills.\n'
