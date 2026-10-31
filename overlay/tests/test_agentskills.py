@@ -275,11 +275,11 @@ class Project(unittest.TestCase):
 
     def test_version_pin_and_unknown_skill(self):
         ov = self.p(".agents", "overlay.yaml")
-        write(ov, read(ov).replace("version: ~1.0", "version: ^2.0"))
+        write(ov, read(ov).replace("version: ~1.1", "version: ^2.0"))
         rc, out = run("render", "-C", self.proj, env=self.env)
         self.assertEqual(rc, 1)
         self.assertIn("pins ^2.0", out)
-        write(ov, read(ov).replace("version: ^2.0", "version: ~1.0").replace("- name: artifact-style\n", "- name: no-such-skill\n"))
+        write(ov, read(ov).replace("version: ^2.0", "version: ~1.1").replace("- name: artifact-style\n", "- name: no-such-skill\n"))
         rc, out = run("render", "-C", self.proj, env=self.env)
         self.assertEqual(rc, 1)
         self.assertIn("no-such-skill", out)
@@ -339,6 +339,82 @@ class Project(unittest.TestCase):
         self.assertIn("edited", read(self.p(".claude/skills/artifact-style/SKILL.md")))
         self.assertNotEqual(json.loads(read(self.p(".agents/agentskills.lock")))["sources"]["base"]["commit"], c1)
 
+    def test_three_levels_from_git(self):
+        """Personal base (git) -> org layer (its own git repo) -> project: all three end up in the render."""
+        if not shutil.which("git"):
+            self.skipTest("git missing")
+        def repo(path):
+            g = ["git", "-C", path, "-c", "user.name=t", "-c", "user.email=t@t"]
+            subprocess.check_call(["git", "init", "-q", "-b", "main", path])
+            subprocess.check_call(g + ["add", "-A"])
+            subprocess.check_call(g + ["commit", "-qm", "v1"])
+        base = os.path.join(self.tmp, "base-repo")
+        shutil.copytree(os.path.join(REPO, "skills"), os.path.join(base, "skills"))
+        repo(base)
+        org = os.path.join(self.tmp, "org-layer")
+        repo(org)
+        ov = self.p(".agents", "overlay.yaml")
+        write(ov, read(ov).replace("path: " + REPO, "git: file://" + base + "\n  ref: main")
+              .replace("  - path: ../org-layer\n", "  - git: file://" + org + "\n    ref: main\n"))
+        rc, out = run("render", "-C", self.proj, env=self.env)
+        self.assertEqual(rc, 0, out)
+        lock = json.loads(read(self.p(".agents/agentskills.lock")))
+        self.assertEqual(sorted(lock["sources"]), ["base", "extends:arffornia"])
+        self.assertTrue(lock["sources"]["extends:arffornia"]["commit"])
+        sk = read(self.p(".claude/skills/review-stack/SKILL.md"))
+        self.assertIn("capabilities", sk)              # level 1: personal base
+        self.assertIn("never squash", sk)              # level 2: org layer
+        self.assertIn("tracking issue", sk)            # level 3: project
+        self.assertEqual(run("check", "-C", self.proj, env=self.env)[0], 0)
+
+    def test_export_and_diff(self):
+        a, b = os.path.join(self.tmp, "exp-a"), os.path.join(self.tmp, "exp-b")
+        rc, out = run("export", "-C", self.proj, "--out", a, env=self.env)
+        self.assertEqual(rc, 0, out)
+        for t in ("claude", "codex", "opencode"):
+            self.assertTrue(os.path.isfile(os.path.join(a, t, "review-stack", "SKILL.md")))
+        self.assertIn("extends:arffornia", read(os.path.join(a, "BUILD.json")))
+        # export does not touch the project's own folders
+        self.assertFalse(os.path.exists(self.p(".claude/skills")))
+        run("export", "-C", self.proj, "--out", b, env=self.env)
+        rc, out = run("diff", a, b, "--exit-code")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("no change", out)
+        org = os.path.join(self.tmp, "org-layer", "overlay", "arffornia.yaml")
+        write(org, read(org).replace("never squash", "never squash or rebase"))
+        run("export", "-C", self.proj, "--out", b, env=self.env)
+        rc, out = run("diff", a, b, "--exit-code")
+        self.assertEqual(rc, 1)
+        self.assertIn("changed  claude/review-stack", out)
+        self.assertIn("+- Arffornia: the orchestrator merges", out)
+        rc, out = run("diff", a, b, "--markdown")
+        self.assertIn("| changed | `codex/review-stack` |", out)
+        self.assertIn("```diff", out)
+        # refuses to wipe a folder that is not an export
+        write(os.path.join(self.tmp, "notexp", "keep.txt"), "x")
+        rc, out = run("export", "-C", self.proj, "--out", os.path.join(self.tmp, "notexp"), env=self.env)
+        self.assertEqual(rc, 1)
+
+    def test_preview_against_git_ref(self):
+        if not shutil.which("git"):
+            self.skipTest("git missing")
+        g = ["git", "-C", self.tmp, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.check_call(["git", "init", "-q", "-b", "main", self.tmp])
+        ov = self.p(".agents", "overlay.yaml")
+        write(ov, read(ov).replace("path: ../org-layer", "path: ../org-layer"))
+        subprocess.check_call(g + ["add", "-A"])
+        subprocess.check_call(g + ["commit", "-qm", "v1"])
+        rc, out = run("preview", "-C", self.proj, "--against", "HEAD", env=self.env)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("no change", out)
+        write(ov, read(ov).replace("tracking issue", "tracking ticket"))
+        keep = os.path.join(self.tmp, "kept")
+        rc, out = run("preview", "-C", self.proj, "--against", "HEAD", "--markdown", "--keep", keep, env=self.env)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("| changed | `claude/review-stack` |", out)
+        self.assertIn("+8. Also post the page link in the chantier's tracking ticket.", out)
+        self.assertTrue(os.path.isfile(os.path.join(keep, "BUILD.json")))
+
     def test_init(self):
         d = os.path.join(self.tmp, "fresh")
         os.makedirs(d)
@@ -361,7 +437,7 @@ class Repo(unittest.TestCase):
 
     def test_runs_as_script(self):
         out = subprocess.run([sys.executable, TOOL, "--version"], stdout=subprocess.PIPE).stdout.decode()
-        self.assertIn("agentskills 1.0.0", out)
+        self.assertIn("agentskills " + A.VERSION, out)
 
 
 if __name__ == "__main__":

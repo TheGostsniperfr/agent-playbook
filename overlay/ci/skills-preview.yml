@@ -1,0 +1,24 @@
+# Copy into a project (or org layer) as .github/workflows/skills-preview.yml.
+# On every PR it renders the full skills build (base + org layer + this repo's overlay) at the
+# PR head and at its base, and writes the diff to the job summary: the exact change the agents
+# will read. No secrets, no model, no write permission.
+name: skills-preview
+on:
+  pull_request:
+    paths: [".agents/**", ".claude/skills/**", ".opencode/skills/**"]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: {fetch-depth: 0}
+      - name: Rendered skills match the lockfile
+        run: python3 .claude/skills/overlay-apply/scripts/agentskills check
+      - name: Rendered diff against the PR base
+        run: |
+          python3 .claude/skills/overlay-apply/scripts/agentskills preview \
+            --against "origin/${{ github.base_ref }}" --markdown --keep build/skills >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: {name: rendered-skills, path: build/skills}
