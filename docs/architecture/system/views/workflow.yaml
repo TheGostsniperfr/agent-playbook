@@ -1,0 +1,20 @@
+apiVersion: noodle/v1alpha1
+kind: View
+type: sequence
+title: "agent-playbook · Workflow · Who does what, in which order"
+subtitle: "From a proposed chantier to a deployed change, with the owner involved only where it matters."
+participants: [owner, stack, agent, github, ops]
+meta:
+  - "Scope: one chantier. Out of scope: the inner loop of each PR (make check, hooks)."
+  - "Agents merge only PRs of a chantier the owner approved on the review stack."
+  - "v0.1 · source: docs/architecture/system"
+steps:
+  - {id: propose, from: agent, to: stack, over: c-agent-stack, text: "propose chantier"}
+  - {id: spec, from: agent, to: stack, over: c-agent-stack, text: "spec + decisions with defaults"}
+  - {id: challenge, from: owner, to: stack, over: c-owner-stack, text: "validate or challenge the spec"}
+  - {id: pr, from: agent, to: github, over: c-agent-github, text: "implement, open PRs"}
+  - {note: agent, text: "end-of-task review<br>make check green"}
+  - {id: ready, from: agent, to: stack, over: c-agent-stack, text: "chantier ready: links, risks, test guide"}
+  - {id: approve, from: owner, to: stack, over: c-owner-stack, text: "approve"}
+  - {id: merge, from: agent, to: github, over: c-agent-github, text: "merge in order, deploy"}
+  - {id: state, from: agent, to: ops, over: c-agent-ops, text: "handoff: update STATE.md"}
