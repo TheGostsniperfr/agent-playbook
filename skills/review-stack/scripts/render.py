@@ -5,6 +5,7 @@ Usage:
   render.py chantier.json -o page.html     validate, then write the page
   render.py chantier.json --check          validate only
   render.py --stack -o stack.html          write the review-stack index page (db-driven, no data)
+  render.py --lint-card card.json          lint a stack card (chantiers/<id> document) before writing it
 
 Validates against assets/chantier.schema.json (a built-in subset of JSON Schema: type, required,
 properties, additionalProperties, items, min/maxItems, min/maxLength, pattern, enum, const, $ref)
@@ -77,6 +78,30 @@ def validate(value, schema, root=None, path="$"):
     return errs
 
 
+# Terms the owner should never meet without a plain-words explanation next to them. Extend in an
+# overlay (append to references/plain-words.md and pass --glossary) rather than editing here.
+JARGON = (
+    "force-with-lease", "force push", "rebase", "squash", "fast-forward", "cherry-pick", "octopus",
+    "oidc", "provenance", "csp", "cors", "sast", "dast", "mutation", "flaky", "quorum", "pass^k",
+    "networkpolicy", "network polic", "configmap", "init container", "lockfile", "semver",
+    "trusted publish", "sandbox", "stop hook", "drift", "overlay", "ablation", "wip limit",
+)
+EXPLAINED = re.compile(r"(\bmeans\b|\bi\.e\.|\bthat is\b|\bin plain words\b|\(|: | = | -- | \u2014 |, which\b|\bso that\b)", re.I)
+
+
+def jargon(text, context):
+    """Terms used in text that the context does not explain right after (within 160 chars)."""
+    out = []
+    low_t, low_c = text.lower(), context.lower()
+    for term in JARGON:
+        if term not in low_t:
+            continue
+        i = low_c.find(term)
+        if i < 0 or not EXPLAINED.search(context[i + len(term): i + len(term) + 160]):
+            out.append(term)
+    return out
+
+
 def semantic(data):
     errs = []
     ids = [d["id"] for d in data.get("decisions", [])]
@@ -90,9 +115,40 @@ def semantic(data):
             errs.append("$.decisions[%d]: 'other' is reserved (the page adds it)" % i)
         if d.get("default") not in oids:
             errs.append("$.decisions[%d]: default %r is not one of its options" % (i, d.get("default")))
+        text = " ".join([d.get("title", ""), d.get("context", ""), d.get("why", "")] + [o.get("label", "") + " " + o.get("detail", "") for o in d.get("options", [])])
+        for term in jargon(text, d.get("context", "")):
+            errs.append("$.decisions[%d]: explain %r in plain words in the context (what it is, why it matters), e.g. '%s means ...'" % (i, term, term))
     acc = data.get("accent")
     if acc and not data.get("title", "").endswith(acc):
         errs.append("$.accent: must be the end of the title")
+    return errs
+
+
+def lint_card(card):
+    """A stack card (db chantiers/<id>): every inline decision must be readable cold."""
+    errs = []
+    for k in ("title", "summary", "status"):
+        if not card.get(k):
+            errs.append("card: missing %s" % k)
+    if card.get("status") not in (None, "building", "ready", "done"):
+        errs.append("card: status must be building, ready or done")
+    for l in card.get("links") or []:
+        if not str(l.get("url", "")).startswith("https://"):
+            errs.append("card.links: %r is not a full https URL" % l.get("url"))
+    for i, d in enumerate(card.get("decisions") or []):
+        where = "card.decisions[%d]" % i
+        for k in ("id", "q", "why", "options", "default"):
+            if not d.get(k):
+                errs.append("%s: missing %s%s" % (where, k, " (one plain line: what this is and why we ask)" if k == "why" else ""))
+        if d.get("why") and len(d["why"]) < 40:
+            errs.append("%s: why is too short to be read cold (40 chars minimum)" % where)
+        if d.get("default") and d.get("default") not in (d.get("options") or []):
+            errs.append("%s: default %r is not one of its options" % (where, d.get("default")))
+        if "Other" in (d.get("options") or []):
+            errs.append("%s: do not add 'Other', the page adds it" % where)
+        text = " ".join([d.get("q", ""), d.get("why", "")] + list(d.get("options") or []))
+        for term in jargon(text, d.get("why", "")):
+            errs.append("%s: explain %r in plain words in why" % (where, term))
     return errs
 
 
@@ -163,7 +219,7 @@ def body_html(d):
     if decs:
         out.append('<section><div class="section-head"><div class="eyebrow">Your calls</div><h2>%d decision%s, each with a default</h2>'
                    '<p>Change only what you disagree with: the default is preselected and silence keeps it. Answers save as you go.</p></div>'
-                   '<p class="hint"><b>Voice</b>To speak instead of typing, tap a field and use your keyboard\'s mic (iPhone, Android), Edit &gt; Start Dictation on macOS, or Win+H on Windows. The page itself cannot use the microphone.</p>'
+                   '<p class="hint"><b>Voice</b>To speak instead of typing, tap a field and use your keyboard\'s mic (iPhone, Android), Dictation on macOS (press Fn twice), or Win+H on Windows; on Linux use a dictation app. The page itself cannot use the microphone.</p>'
                    '<div class="decisions">%s</div></section>' % (len(decs), "" if len(decs) == 1 else "s", "".join(decs)))
 
     def gaps(items, cls):
@@ -203,7 +259,16 @@ def main(argv=None):
     ap.add_argument("-o", "--out")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--stack", action="store_true", help="write the stack index page instead")
+    ap.add_argument("--lint-card", metavar="CARD_JSON", help="lint a stack card document and exit")
     a = ap.parse_args(argv)
+    if a.lint_card:
+        with open(a.lint_card, encoding="utf-8") as f:
+            errs = lint_card(json.load(f))
+        for e in errs:
+            print("error: " + e, file=sys.stderr)
+        if not errs:
+            print("ok: card %s" % a.lint_card)
+        return 1 if errs else 0
     if a.stack:
         with open(STACK, encoding="utf-8") as f:
             tpl = f.read()

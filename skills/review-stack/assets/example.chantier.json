@@ -28,7 +28,7 @@
     {
       "id": "sandbox",
       "title": "Sandbox on by default",
-      "context": "Agents run sandboxed with an allowlist of package registries.",
+      "context": "Agents run inside a sandbox: an operating-system fence that lets their commands touch only the project folder and a short allow-list of package sites. It stops a tricked agent from sending files elsewhere; the cost is an occasional blocked download that needs a one-line allow-list entry.",
       "options": [
         {"id": "on", "label": "Keep it on", "detail": "Safer; a few installs need the allowlist."},
         {"id": "opt-in", "label": "Opt-in per repo"}
@@ -39,9 +39,10 @@
     {
       "id": "force-with-lease",
       "title": "--force-with-lease on feature branches",
-      "context": "Plain --force and anything aimed at main stay blocked.",
+      "context": "When an agent updates its own PR branch after a rebase (replaying its commits on top of the newest main), git refuses a normal push. Force-with-lease means \"overwrite my branch only if nobody else pushed to it since I last looked\", so it cannot erase someone else's work. Plain --force and any push to main stay blocked either way.",
       "options": [{"id": "allow", "label": "Allow it"}, {"id": "block", "label": "Block it too"}],
-      "default": "allow"
+      "default": "allow",
+      "why": "Agents keep their PR branches current without ever being able to overwrite work they have not seen."
     }
   ],
   "verified": [

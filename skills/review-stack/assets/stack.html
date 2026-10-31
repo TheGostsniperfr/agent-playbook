@@ -48,7 +48,11 @@ h1 span{color:var(--orange)}
 .pill.ready{color:var(--orange-ink);border-color:var(--orange)}
 .pill.approve{color:var(--teal);border-color:var(--teal)}
 .pill.changes{color:var(--red);border-color:var(--red)}
-.body{padding:0 18px 18px 76px;display:flex;flex-direction:column;gap:16px}
+.body{padding:0 18px 18px 76px;display:flex;flex-direction:column;gap:16px;animation:unfold .32s ease both}
+@keyframes unfold{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.card{transition:border-color .3s ease,box-shadow .3s ease,opacity .3s ease;scroll-margin-top:calc(env(safe-area-inset-top,0px) + 16px)}
+.dec .why{margin:0;font-size:14px}.dec .why b{font-weight:650}
+@media (prefers-reduced-motion:reduce){.body{animation:none}.card{transition:none}}
 .links{display:flex;flex-direction:column;gap:6px;font-size:14.5px;margin:0;padding:0;list-style:none}
 .links small{color:var(--muted)}
 .dec{border-top:1px dashed var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px}
@@ -90,7 +94,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
     <div><b id="m-approved">–</b><small>approved</small></div>
     <div><b id="m-changes">–</b><small>sent back</small></div>
   </div>
-  <p class="hint">Text fields work with your keyboard's dictation: the mic key on iPhone and Android, Edit &gt; Start Dictation on macOS, Win+H on Windows. Answers save as you go and Claude reads them.</p>
+  <p class="hint">Text fields work with your keyboard's dictation: the mic key on iPhone and Android, Dictation on macOS (press Fn twice), Win+H on Windows; Linux desktops need a dictation app (see the review-stack skill). Answers save as you go and Claude reads them.</p>
   <section class="stack" id="stack" aria-live="polite">
     <div class="empty" id="empty">Loading the stack… If this stays here, open the page signed in to claude.ai: the stack is stored with the page.</div>
   </section>
@@ -99,7 +103,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <script>
 /* db: chantiers/<id> {title, summary, order, status: building|ready|done, detail?, links?[{label,url,note?}],
-   decisions?[{id, q, why?, options[string], default}]}   written by agents
+   decisions?[{id, q, why, options[string], default}]}   why: one plain line on what this is and why it is asked   written by agents
    answers/<id> {verdict: approve|changes|later|"", notes, decisions{<id>:{choice, other?}}, at}   written by the page */
 (function(){
   const $ = (s, el=document) => el.querySelector(s);
@@ -150,7 +154,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
           return `<label for="${id}"><input type="radio" id="${id}" name="${it.id}-${d.id}" data-c="${esc(it.id)}" data-d="${esc(d.id)}" value="${esc(o)}" ${choice===o?"checked":""}>${esc(o)}${o===d.default?' <span class="def">default</span>':''}</label>`;
         }).join("");
         const other = choice === "Other" ? `<input type="text" id="o-${it.id}-${d.id}" data-c="${esc(it.id)}" data-d="${esc(d.id)}" data-other="1" placeholder="Your answer (dictation works)" value="${esc(cur.other||"")}">` : "";
-        return `<div class="dec"><h3>${esc(d.q)}</h3>${d.why?`<p>${esc(d.why)}</p>`:""}<div class="opts" role="radiogroup">${opts}</div>${other}</div>`;
+        return `<div class="dec"><h3>${esc(d.q)}</h3>${d.why?`<p class="why"><b>Why we ask:</b> ${esc(d.why)}</p>`:""}<div class="opts" role="radiogroup">${opts}</div>${other}</div>`;
       }).join("");
       const verdict = building ? "" : `
         <label for="notes-${it.id}" style="font-weight:650;font-size:14.5px">Notes for the agents</label>
@@ -163,7 +167,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
         </div>`;
       body = `<div class="body">${it.detail?`<p style="margin:0;font-size:15px">${esc(it.detail)}</p>`:""}${links?`<ul class="links">${links}</ul>`:""}${decs}${verdict}</div>`;
     }
-    return `<article class="${cls}"><button class="head" type="button" data-toggle="${esc(it.id)}" aria-expanded="${isOpen}"><span class="n">${n}</span><span><h2>${esc(it.title)}</h2><p>${esc(it.summary)}</p></span>${pill}</button>${body}</article>`;
+    return `<article class="${cls}" id="card-${esc(it.id)}"><button class="head" type="button" data-toggle="${esc(it.id)}" aria-expanded="${isOpen}"><span class="n">${n}</span><span><h2>${esc(it.title)}</h2><p>${esc(it.summary)}</p></span>${pill}</button>${body}</article>`;
   }
   function save(id){
     clearTimeout(timers[id]);
@@ -182,7 +186,16 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
     if (v){ const id = v.dataset.c, a = ans(id); a.verdict = a.verdict === v.dataset.v ? "" : v.dataset.v;
       const it = items.find(i => i.id === id);
       (it.decisions||[]).forEach(d => { a.decisions = a.decisions || {}; if (!a.decisions[d.id]) a.decisions[d.id] = {choice:d.default}; });
-      answers[id] = a; if (a.verdict && a.verdict !== "changes") open.delete(id); render(); save(id); }
+      answers[id] = a;
+      if (a.verdict && a.verdict !== "changes") {
+        // collapse this card, open the next ready one and bring it into view
+        open.delete(id);
+        const next = items.slice().sort((x,y) => rank(x)-rank(y) || (x.order||0)-(y.order||0)).find(i => i.id !== id && rank(i) === 1);
+        if (next) open.add(next.id);
+        render(); save(id);
+        if (next) requestAnimationFrame(() => { const el = document.getElementById("card-" + next.id);
+          if (el) el.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"}); });
+      } else { render(); save(id); } }
   });
   document.addEventListener("change", e => {
     const r = e.target;

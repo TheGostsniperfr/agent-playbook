@@ -42,17 +42,17 @@
     },
     "decisions": {
       "type": "array",
-      "items": {"type": "object", "required": ["id", "title", "context", "options", "default"], "additionalProperties": false,
+      "items": {"type": "object", "required": ["id", "title", "context", "options", "default", "why"], "additionalProperties": false,
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
           "title": {"type": "string", "maxLength": 90},
-          "context": {"type": "string", "maxLength": 600},
+          "context": {"type": "string", "minLength": 60, "maxLength": 600, "description": "Readable cold: what the thing is, why it is asked now, what each option changes. Explain every technical term in plain words."},
           "links": {"type": "array", "items": {"$ref": "#/$defs/link"}},
           "options": {"type": "array", "minItems": 1, "maxItems": 6,
             "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false,
               "properties": {"id": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}, "label": {"type": "string", "maxLength": 120}, "detail": {"type": "string", "maxLength": 240}}}},
           "default": {"type": "string", "description": "id of the recommended option; silence keeps it."},
-          "why": {"type": "string", "maxLength": 240}
+          "why": {"type": "string", "minLength": 20, "maxLength": 240, "description": "One plain line: why the default is recommended."}
         }}
     },
     "verified": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
