@@ -22,8 +22,9 @@ week ago. The best teams in the world (Google, Meta) add three things we do not 
 **mutation testing on each diff** (it tells you whether the tests would catch a bug, not just
 whether they pass), **automatic flaky-test quarantine**, and **LLM-generated tests that are
 only kept when they provably kill a planted bug**. The step that would put Arffornia ahead of
-most game studios is ADR-0007: a temporary Minecraft server per pull request, where scripted
-bots play the feature before a human sees it.
+most game studios is ADR-0007, resized to the homelab: a test server for any PR in one
+command, where bots and then an agent play the feature before a human sees it. Updated
+2026-10-31: five proposals kept (the high-value ones), the 2019 Meta source marked as dated.
 
 ## How ours works
 
@@ -101,6 +102,9 @@ the change never caused a breakage in their data (Memon et al., ICSE-SEIP 2017).
 Meta replaced "run everything the build graph reaches" with a gradient-boosted model trained on
 three months of results: it runs under a third of those tests, still catches over 99.9% of
 faulty changes, and halved the infrastructure cost (Machalica et al., 2018/2019).
+**Dated source, checked 2026-10-31:** the paper is old, but the technique is still current: a
+2025 replication study confirms it (Aichmann, TU Wien), and Gradle Develocity and Launchable
+sell it. It only pays off with hours of tests per change; background only for us.
 
 ### Flaky tests: measure, quarantine, file a ticket
 
@@ -219,18 +223,19 @@ told to skip style.
 
 ## What we could do next
 
+Only the high-value proposals are kept (owner's request, 2026-10-31). Each becomes a spec first.
+
 | # | Proposal | Value | Effort | First step |
 |---|---|---|---|---|
-| 1 | **Diff-scoped mutation in the agent's verify step.** Mutate only changed lines, one mutant per line, cap about 7 per file; surviving mutants are listed in the evidence. Automates our "break it, watch it fail" habit. | High | S-M | `make mutate-diff` wrapper: Infection with `--git-diff-lines --git-diff-base=origin/main`, Stryker with `--mutate <file>:<lines>`, PIT with `targetClasses` from the diff. Pilot on the website shop service. |
-| 2 | **Mini-ACH: tests must kill a planted bug.** The test-writer gets a concern ("a locked recipe must never be selectable"), plants 3-5 matching mutants, and keeps only tests that build, pass 5/5 on the base, and kill at least one mutant. Runs in the agent session (no API key in CI). | High | M | Add an acceptance filter script to the `test-writer` agent; trial on Mods security issues. |
-| 3 | **Per-PR preview server with a scripted bot** (ADR-0007). Mineflayer-style bot scripts per feature: join, place the Crafter, craft, check the reward, read RCON and logs. Results go on the PR and the chantier page. | Very high | L | Solve the prerequisite: per-namespace secret isolation, then one manual preview for one Mods PR. |
+| 1 | **Diff-scoped mutation in the agent's verify step.** Plant small bugs only in changed lines, one per line, about 7 per file; surviving ones are listed in the evidence. Automates our "break it, watch it fail" habit. | High | S-M | `make mutate-diff` wrapper: Infection with `--git-diff-lines --git-diff-base=origin/main`, Stryker with `--mutate <file>:<lines>`, PIT with `targetClasses` from the diff. Pilot on the website shop service. |
+| 2 | **Mini-ACH: new tests must kill a planted bug.** The test-writer gets a concern ("a locked recipe must never be selectable"), plants 3-5 matching bugs, and keeps only tests that build, pass 5/5 on the base, and catch at least one. Runs in the agent session (no API key in CI). | High | M | Add an acceptance filter script to the `test-writer` agent; trial on Mods security issues. |
+| 3 | **One-command test server per PR, then an agent that plays it** (ADR-0007, resized). Small single-mod servers are cheap; the full 330-mod pack runs one at a time on the homelab. Step 1: `make preview PR=<n>` starts server and client on the PR (locally is fine) with a test guide: what changed, what to check, what to report. Step 2: scripted bots per feature (join, place the Crafter, craft, check the reward, read RCON and logs). Step 3: an agent drives the game itself, the way Claude in Chrome drives a browser, as the last check before the owner tests; its report never blocks a merge. | Very high | L | A spec plus a benchmark of existing tools (Mineflayer, GameTest, BugCraft, Voyager, Mindcraft), then `make preview` for one Mods PR. |
 | 4 | **Visual baselines for everything the owner reviews by eye**: Playwright `toHaveScreenshot` for website and launcher in a pinned container, the spec-004 client harness contact sheet for Minecraft screens, and the custom loading animation he asked for. The diff image goes on the review page. | High | M | Add 5 screenshot assertions to the website E2E inside the Playwright Docker image. |
 | 5 | **Property-based tests and fuzzing where input is hostile**: jqwik on serverbound packet handlers and Crafter energy maths, fast-check on Nexus_Mods path confinement and index parsing. | High (security) | S-M | One fast-check property: no index entry can resolve outside the game directory. |
-| 6 | **Flaky detection, light version**: a nightly job reruns each suite 5 times on `main`, writes `flaky.json`, opens an issue labelled `flaky` with the owner area; the Stop hook names known-flaky tests instead of retrying blindly. | Medium | S | Nightly workflow template in agent-kit, piloted on Nexus_Mods. |
-| 7 | **pass^k harness evals**: run reviewer and test-writer evals 3 times and report pass^3; add test-writer cases from closed issues. | Medium | S | `evals/run.py --repeat 3`. |
-| 8 | **Make `check` a required status check** and run CI once on `macos-14` (arm64). | Medium | S | Owner setting per repo; one matrix entry per repo. |
-| 9 | **LLM exploratory playtester** (Voyager/BugCraft style) on a preview server, nightly, producing a non-blocking exploration report. | Speculative | L | Only after #3; start with replaying our own bug reports. |
-| 10 | **Test impact analysis.** | Low at our scale | - | Skip. |
+
+Dropped from the card: light flaky detection (nightly 5x rerun), pass^k evals and a required
+`check` status are small hygiene already covered by the harness work, no decision needed; test
+impact analysis is not worth it at our scale.
 
 ## Glossary
 
@@ -264,7 +269,8 @@ told to skip style.
 ## Sources
 
 - Memon et al., "Taming Google-Scale Continuous Testing", ICSE-SEIP 2017. https://huang.isis.vanderbilt.edu/cs8395-f23/paper/google-testing-icse-seip-17.pdf (TAP volumes, milestones, distance finding)
-- Machalica et al., "Predictive Test Selection", arXiv Oct 2018 / ICSE-SEIP 2019. https://arxiv.org/abs/1810.05286 (99.9% faulty changes, under 1/3 of tests)
+- Machalica et al., "Predictive Test Selection", arXiv Oct 2018 / ICSE-SEIP 2019. https://arxiv.org/abs/1810.05286 (99.9% faulty changes, under 1/3 of tests). Dated; see the replication below.
+- Aichmann, "Predictive Test Selection: A Replication Study", TU Wien, 2025. https://repositum.tuwien.at/handle/20.500.12708/215633
 - J. Micco, "Flaky Tests at Google and How We Mitigate Them", 27 May 2016. https://testing.googleblog.com/2016/05/flaky-tests-at-google-and-how-we.html (figures as summarised in https://talent500.com/blog/google-flaky-test-mitigation-strategies/)
 - A. Patel, "Handling Flaky Tests at Scale: Auto Detection & Suppression", Slack Engineering, 5 Apr 2022. https://slack.engineering/handling-flaky-tests-at-scale-auto-detection-suppression
 - N. Malik, "Taming Test Flakiness", Atlassian, 8 Dec 2025. https://www.atlassian.com/blog/atlassian-engineering/taming-test-flakiness-how-we-built-a-scalable-tool-to-detect-and-manage-flaky-tests
