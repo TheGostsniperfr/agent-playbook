@@ -49,7 +49,8 @@
     busy[id] = true;
     var c = card(id), s = c.querySelector(".saved"), v = current(id);
     status(s, "", "Saving...");
-    db.doc("answers/" + id).set({ chantier: DATA.id, decision: id, choice: v.choice, text: v.text, by: me, at: stamp() })
+    // a synchronous throw must not leave busy[] stuck or the status on "Saving...": wrap the call
+    new Promise(function (ok) { ok(db.doc("answers/" + id).set({ chantier: DATA.id, decision: id, choice: v.choice, text: v.text, by: me, at: stamp() })); })
       .then(function () { dirty[id] = false; status(s, "ok", "Saved"); })
       .catch(function (e) { status(s, "err", "Not saved: " + (e && e.message || "error") + ". Use Copy my answers."); })
       .then(function () { busy[id] = false; if (again[id]) { again[id] = false; save(id); } });
@@ -94,7 +95,7 @@
     var st = $("v-status");
     if (!db) { status(st, "err", "Not saved in this view. Use Copy my answers."); return; }
     status(st, "", "Saving...");
-    db.doc("verdict/current").set({ chantier: DATA.id, status: statusValue, note: $("v-note").value.trim(), answers: all(), by: me, at: stamp() })
+    new Promise(function (ok) { ok(db.doc("verdict/current").set({ chantier: DATA.id, status: statusValue, note: $("v-note").value.trim(), answers: all(), by: me, at: stamp() })); })
       .then(function () { status(st, "ok", label(statusValue) + ", saved " + new Date().toLocaleString()); mark(statusValue); })
       .catch(function (e) { status(st, "err", "Not saved: " + (e && e.message || "error")); });
   }

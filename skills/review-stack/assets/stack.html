@@ -72,6 +72,8 @@ textarea{min-height:76px;resize:vertical}
 .verdict button.on[data-v=changes]{background:var(--red);color:var(--panel)}
 .verdict button.on[data-v=later]{background:var(--slate);color:var(--panel)}
 .saved{font-size:13px;color:var(--muted);margin-left:auto}
+.saved.err{color:var(--red);font-weight:650}
+.alert{background:var(--panel);border:1px solid var(--red);color:var(--red);border-radius:8px;padding:10px 14px;font-size:14.5px;font-weight:600}
 .empty{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:28px;color:var(--muted)}
 footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
 @media (max-width:560px){
@@ -95,6 +97,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
     <div><b id="m-changes">–</b><small>sent back</small></div>
   </div>
   <p class="hint">Text fields work with your keyboard's dictation: the mic key on iPhone and Android, Dictation on macOS (press Fn twice), Win+H on Windows; Linux desktops need a dictation app (see the review-stack skill). Answers save as you go and Claude reads them.</p>
+  <p class="alert" id="alert" role="alert" hidden></p>
   <section class="stack" id="stack" aria-live="polite">
     <div class="empty" id="empty">Loading the stack… If this stays here, open the page signed in to claude.ai: the stack is stored with the page.</div>
   </section>
@@ -107,7 +110,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
    answers/<id> {verdict: approve|changes|later|"", notes, decisions{<id>:{choice, other?}}, at}   written by the page */
 (function(){
   const $ = (s, el=document) => el.querySelector(s);
-  let db = null, items = [], answers = {}, open = new Set(), timers = {};
+  let db = null, items = [], answers = {}, open = new Set(), timers = {}, saveState = {};
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const safeUrl = u => /^https:\/\//.test(String(u || "")) ? u : "#";
 
@@ -119,7 +122,14 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
     if (v === "later") return 2;
     return 1;
   }
+  // Rule: a render error must never swallow a save. Handlers call save() before render(), and
+  // render() catches its own errors and shows them, so a bug in drawing never loses an answer.
+  function alertBox(msg){ const el = document.getElementById("alert"); if (!el) return; el.textContent = msg || ""; el.hidden = !msg; }
   function render(){
+    try { draw(); }
+    catch(e){ console.error(e); alertBox("Display error (" + (e && e.message || e) + "). Your clicks are still being saved; reload the page to see them."); }
+  }
+  function draw(){
     const list = items.slice().sort((a,b) => rank(a)-rank(b) || (a.order||0)-(b.order||0));
     let nextId = (list.find(i => rank(i) === 1) || {}).id;
     if (!open.size && nextId) open.add(nextId);
@@ -131,7 +141,9 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
     if (!list.length){ st.innerHTML = '<div class="empty">Nothing waiting for you right now. When an agent finishes a chantier it adds a card here.</div>'; return; }
     const focusId = document.activeElement && document.activeElement.id;
     st.innerHTML = list.map((it, idx) => card(it, idx+1, it.id === nextId)).join("");
-    if (focusId && document.getElementById(focusId)) { const el = document.getElementById(focusId); el.focus(); if (el.setSelectionRange && el.value) el.setSelectionRange(el.value.length, el.value.length); }
+    if (focusId && document.getElementById(focusId)) { const el = document.getElementById(focusId); el.focus();
+      // setSelectionRange throws on radios and buttons: only text fields, and never let it break the render
+      if ((el.tagName === "TEXTAREA" || el.type === "text") && el.value) { try { el.setSelectionRange(el.value.length, el.value.length); } catch(e){} } }
   }
   function card(it, n, isNext){
     const a = ans(it.id), building = it.status === "building";
@@ -163,7 +175,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
           <button type="button" data-c="${esc(it.id)}" data-v="approve" class="${a.verdict==="approve"?"on":""}">Approve</button>
           <button type="button" data-c="${esc(it.id)}" data-v="changes" class="${a.verdict==="changes"?"on":""}">Send back</button>
           <button type="button" data-c="${esc(it.id)}" data-v="later" class="${a.verdict==="later"?"on":""}">Later</button>
-          <span class="saved" id="saved-${it.id}">${a.at ? "Saved" : ""}</span>
+          <span class="saved${/^Not saved/.test(saveState[it.id]||"") ? " err" : ""}" id="saved-${it.id}">${esc(saveState[it.id] || (a.at ? "Saved" : ""))}</span>
         </div>`;
       body = `<div class="body">${it.detail?`<p style="margin:0;font-size:15px">${esc(it.detail)}</p>`:""}${links?`<ul class="links">${links}</ul>`:""}${decs}${verdict}</div>`;
     }
@@ -173,10 +185,13 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
     clearTimeout(timers[id]);
     timers[id] = setTimeout(async () => {
       const a = ans(id); a.at = new Date().toISOString(); answers[id] = a;
-      const s = document.getElementById("saved-"+id);
-      if (!db){ if (s) s.textContent = "Not saved: open signed in"; return; }
-      try { await db.collection("answers").doc(id).set(a); if (s) s.textContent = "Saved"; }
-      catch(e){ if (s) s.textContent = "Not saved (" + (e && e.code || "error") + ")"; }
+      const show = (txt) => { saveState[id] = txt; const s = document.getElementById("saved-"+id);
+        if (s){ s.textContent = txt; s.classList.toggle("err", /^Not saved/.test(txt)); } };
+      if (!db){ show("Not saved: open signed in"); alertBox("Not saved: open this page signed in to claude.ai."); return; }
+      show("Saving…");
+      try { await db.collection("answers").doc(id).set(a); show("Saved"); if (!Object.values(saveState).some(v => /^Not saved/.test(v))) alertBox(""); }
+      catch(e){ const msg = "Not saved (" + (e && (e.code || e.message) || "error") + ")"; show(msg);
+        alertBox(msg + ": your last change to \"" + ((items.find(i => i.id === id) || {}).title || id) + "\" is not stored. Try again or reload."); }
     }, 500);
   }
   document.addEventListener("click", e => {
@@ -192,15 +207,15 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
         open.delete(id);
         const next = items.slice().sort((x,y) => rank(x)-rank(y) || (x.order||0)-(y.order||0)).find(i => i.id !== id && rank(i) === 1);
         if (next) open.add(next.id);
-        render(); save(id);
+        save(id); render();
         if (next) requestAnimationFrame(() => { const el = document.getElementById("card-" + next.id);
           if (el) el.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"}); });
-      } else { render(); save(id); } }
+      } else { save(id); render(); } }
   });
   document.addEventListener("change", e => {
     const r = e.target;
     if (r.type === "radio" && r.dataset.d){ const a = ans(r.dataset.c); a.decisions = a.decisions||{};
-      a.decisions[r.dataset.d] = Object.assign({}, a.decisions[r.dataset.d], {choice:r.value}); answers[r.dataset.c] = a; render(); save(r.dataset.c); }
+      a.decisions[r.dataset.d] = Object.assign({}, a.decisions[r.dataset.d], {choice:r.value}); answers[r.dataset.c] = a; save(r.dataset.c); render(); }
   });
   document.addEventListener("input", e => {
     const t = e.target;
