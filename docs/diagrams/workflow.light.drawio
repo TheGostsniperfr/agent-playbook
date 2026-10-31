@@ -1,0 +1,141 @@
+<mxfile host="archgen">
+  <diagram id="workflow-light" name="agent-playbook · Workflow · Who does what, in which order (light)">
+    <mxGraphModel grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1349" pageHeight="780" background="#f8fafc" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="bg" value="" style="shape=image;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMzQ5IiBoZWlnaHQ9Ijc4MCI+PGRlZnM+PHBhdHRlcm4gaWQ9ImciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSA0MCAwIEwgMCAwIDAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2UyZThmMCIgc3Ryb2tlLXdpZHRoPSIwLjUiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNmOGZhZmMiLz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2cpIi8+PC9zdmc+;imageAspect=0;locked=1;editable=0;movable=0;resizable=0;deletable=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1349" height="780" as="geometry" />
+        </mxCell>
+        <mxCell id="header-dot" value="" style="ellipse;fillColor=#059669;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="44" width="12" height="12" as="geometry" />
+        </mxCell>
+        <mxCell id="header-title" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;b&gt;agent-playbook · Workflow · Who does what, in which order&lt;/b&gt;&lt;/span&gt;" style="text;html=1;align=left;verticalAlign=middle;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=24;fontColor=#0f172a;" vertex="1" parent="1">
+          <mxGeometry x="64" y="30" width="949" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="header-sub" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;font color=&quot;#1e293b&quot; style=&quot;font-size:13px&quot;&gt;From a proposed chantier to a deployed change, with the owner involved only where it matters.&lt;/font&gt;&lt;br&gt;Scope: one chantier. Out of scope: the inner loop of each PR (make check, hooks).&lt;br&gt;Agents merge only PRs of a chantier the owner approved on the review stack.&lt;br&gt;v0.1 · source: docs/architecture/system&lt;/span&gt;" style="text;html=1;align=left;verticalAlign=top;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=11;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="64" y="74" width="949" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="life-owner" value="" style="html=1;endArrow=none;strokeColor=#475569;strokeWidth=1;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="256" as="sourcePoint" />
+            <mxPoint x="130" y="740" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="life-stack" value="" style="html=1;endArrow=none;strokeColor=#475569;strokeWidth=1;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="382" y="256" as="sourcePoint" />
+            <mxPoint x="382" y="740" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="life-agent" value="" style="html=1;endArrow=none;strokeColor=#475569;strokeWidth=1;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="694" y="256" as="sourcePoint" />
+            <mxPoint x="694" y="740" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="life-github" value="" style="html=1;endArrow=none;strokeColor=#475569;strokeWidth=1;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="974" y="256" as="sourcePoint" />
+            <mxPoint x="974" y="740" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="life-ops" value="" style="html=1;endArrow=none;strokeColor=#475569;strokeWidth=1;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1219" y="256" as="sourcePoint" />
+            <mxPoint x="1219" y="740" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-propose" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;1&lt;/span&gt; propose chantier&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="694" y="316" as="sourcePoint" />
+            <mxPoint x="382" y="316" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-spec" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;2&lt;/span&gt; spec + decisions with defaults&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="694" y="364" as="sourcePoint" />
+            <mxPoint x="382" y="364" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-challenge" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;3&lt;/span&gt; validate or challenge the spec&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="412" as="sourcePoint" />
+            <mxPoint x="382" y="412" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-pr" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;4&lt;/span&gt; implement, open PRs&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="694" y="460" as="sourcePoint" />
+            <mxPoint x="974" y="460" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-ready" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;5&lt;/span&gt; chantier ready: links, risks, test guide&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="694" y="556" as="sourcePoint" />
+            <mxPoint x="382" y="556" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-approve" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;6&lt;/span&gt; approve&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="604" as="sourcePoint" />
+            <mxPoint x="382" y="604" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-merge" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;7&lt;/span&gt; merge in order, deploy&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="694" y="652" as="sourcePoint" />
+            <mxPoint x="974" y="652" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg-state" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;span style=&quot;background-color:#0f172a;color:#ffffff;border-radius:3px;padding:0px 4px;font-weight:bold;&quot;&gt;8&lt;/span&gt; handoff: update STATE.md&lt;/span&gt;" style="html=1;strokeColor=#64748b;strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;labelBackgroundColor=#f8fafc;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="694" y="700" as="sourcePoint" />
+            <mxPoint x="1219" y="700" as="targetPoint" />
+            <mxPoint x="0" y="-12" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="owner" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;b&gt;&lt;font color=&quot;#0f172a&quot; style=&quot;font-size:12px&quot;&gt;Owner&lt;/font&gt;&lt;/b&gt;&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#f1f5f9;html=1;whiteSpace=wrap;strokeColor=#64748b;strokeWidth=1.5;align=left;verticalAlign=top;spacingLeft=50;spacingTop=6;spacingRight=8;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=12;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="180" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="owner__icon" value="" style="shape=image;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIyMCIgcj0iMTEiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA4OTFiMiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PHBhdGggZD0iTTEwIDU4YzAtMTIuMiA5LjgtMjIgMjItMjJzMjIgOS44IDIyIDIyIiBmaWxsPSJub25lIiBzdHJva2U9IiMwODkxYjIiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+Cg==;imageAspect=1;editable=0;connectable=0;movable=0;resizable=0;" vertex="1" parent="owner">
+          <mxGeometry x="12" y="12" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="stack" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;b&gt;&lt;font color=&quot;#0f172a&quot; style=&quot;font-size:12px&quot;&gt;Review stack&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;i&gt;&lt;font color=&quot;#1e293b&quot; style=&quot;font-size:10px&quot;&gt;[artifact + db]&lt;/font&gt;&lt;/i&gt;&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#ecfeff;html=1;whiteSpace=wrap;strokeColor=#0891b2;strokeWidth=1.5;align=left;verticalAlign=top;spacingLeft=50;spacingTop=6;spacingRight=8;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=12;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="292" y="200" width="180" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="stack__icon" value="" style="shape=image;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjNjFkYWZiIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+UmVhY3Q8L3RpdGxlPjxwYXRoIGQ9Ik0xNC4yMyAxMi4wMDRhMi4yMzYgMi4yMzYgMCAwIDEtMi4yMzUgMi4yMzYgMi4yMzYgMi4yMzYgMCAwIDEtMi4yMzYtMi4yMzYgMi4yMzYgMi4yMzYgMCAwIDEgMi4yMzUtMi4yMzYgMi4yMzYgMi4yMzYgMCAwIDEgMi4yMzYgMi4yMzZ6bTIuNjQ4LTEwLjY5Yy0xLjM0NiAwLTMuMTA3Ljk2LTQuODg4IDIuNjIyLTEuNzgtMS42NTMtMy41NDItMi42MDItNC44ODctMi42MDItLjQxIDAtLjc4My4wOTMtMS4xMDYuMjc4LTEuMzc1Ljc5My0xLjY4MyAzLjI2NC0uOTczIDYuMzY1QzEuOTggOC45MTcgMCAxMC40MiAwIDEyLjAwNGMwIDEuNTkgMS45OSAzLjA5NyA1LjA0MyA0LjAzLS43MDQgMy4xMTMtLjM5IDUuNTg4Ljk4OCA2LjM4LjMyLjE4Ny42OS4yNzUgMS4xMDIuMjc1IDEuMzQ1IDAgMy4xMDctLjk2IDQuODg4LTIuNjI0IDEuNzggMS42NTQgMy41NDIgMi42MDMgNC44ODcgMi42MDMuNDEgMCAuNzgzLS4wOSAxLjEwNi0uMjc1IDEuMzc0LS43OTIgMS42ODMtMy4yNjMuOTczLTYuMzY1QzIyLjAyIDE1LjA5NiAyNCAxMy41OSAyNCAxMi4wMDRjMC0xLjU5LTEuOTktMy4wOTctNS4wNDMtNC4wMzIuNzA0LTMuMTEuMzktNS41ODctLjk4OC02LjM4LS4zMTgtLjE4NC0uNjg4LS4yNzctMS4wOTItLjI3OHptLS4wMDUgMS4wOXYuMDA2Yy4yMjUgMCAuNDA2LjA0NC41NTguMTI3LjY2Ni4zODIuOTU1IDEuODM1LjczIDMuNzA0LS4wNTQuNDYtLjE0Mi45NDUtLjI1IDEuNDQtLjk2LS4yMzYtMi4wMDYtLjQxNy0zLjEwNy0uNTM0LS42Ni0uOTA1LTEuMzQ1LTEuNzI3LTIuMDM1LTIuNDQ3IDEuNTkyLTEuNDggMy4wODctMi4yOTIgNC4xMDUtMi4yOTV6bS05Ljc3LjAyYzEuMDEyIDAgMi41MTQuODA4IDQuMTEgMi4yOC0uNjg2LjcyLTEuMzcgMS41MzctMi4wMiAyLjQ0Mi0xLjEwNy4xMTctMi4xNTQuMjk4LTMuMTEzLjUzOC0uMTEyLS40OS0uMTk1LS45NjQtLjI1NC0xLjQyLS4yMy0xLjg2OC4wNTQtMy4zMi43MTQtMy43MDcuMTktLjA5LjQtLjEyNy41NjMtLjEzMnptNC44ODIgMy4wNWMuNDU1LjQ2OC45MS45OTIgMS4zNiAxLjU2NC0uNDQtLjAyLS44OS0uMDM0LTEuMzQ1LS4wMzQtLjQ2IDAtLjkxNS4wMS0xLjM2LjAzNC40NC0uNTcyLjg5NS0xLjA5NiAxLjM0NS0xLjU2NXpNMTIgOC4xYy43NCAwIDEuNDc3LjAzNCAyLjIwMi4wOTMuNDA2LjU4Mi44MDIgMS4yMDMgMS4xODMgMS44Ni4zNzIuNjQuNzEgMS4yOSAxLjAxOCAxLjk0Ni0uMzA4LjY1NS0uNjQ2IDEuMzEtMS4wMTMgMS45NS0uMzguNjYtLjc3MyAxLjI4OC0xLjE4IDEuODctLjcyOC4wNjMtMS40NjYuMDk4LTIuMjEuMDk4LS43NCAwLTEuNDc3LS4wMzUtMi4yMDItLjA5My0uNDA2LS41ODItLjgwMi0xLjIwNC0xLjE4My0xLjg2LS4zNzItLjY0LS43MS0xLjI5LTEuMDE4LTEuOTQ2LjMwMy0uNjU3LjY0Ni0xLjMxMyAxLjAxMy0xLjk1NC4zOC0uNjYuNzczLTEuMjg2IDEuMTgtMS44NjguNzI4LS4wNjQgMS40NjYtLjA5OCAyLjIxLS4wOTh6bS0zLjYzNS4yNTRjLS4yNC4zNzctLjQ4Ljc2My0uNzA0IDEuMTYtLjIyNS4zOS0uNDM1Ljc4Mi0uNjM1IDEuMTc0LS4yNjUtLjY1Ni0uNDktMS4zMS0uNjc2LTEuOTQ3LjY0LS4xNSAxLjMxNS0uMjgzIDIuMDE1LS4zODZ6bTcuMjYgMGMuNjk1LjEwMyAxLjM2NS4yMyAyLjAwNi4zODctLjE4LjYzMi0uNDA1IDEuMjgyLS42NiAxLjkzMy0uMi0uMzktLjQxLS43ODMtLjY0LTEuMTc0LS4yMjUtLjM5Mi0uNDY1LS43NzQtLjcwNS0xLjE0NnptMy4wNjMuNjc1Yy40ODQuMTUuOTQ0LjMxNyAxLjM3NS40OTggMS43MzIuNzQgMi44NTIgMS43MDggMi44NTIgMi40NzYtLjAwNS43NjgtMS4xMjUgMS43NC0yLjg1NyAyLjQ3NS0uNDIuMTgtLjg4LjM0Mi0xLjM1NS40OTMtLjI4LS45NTgtLjY0Ni0xLjk1Ni0xLjEtMi45OC40NS0xLjAxNy44MS0yLjAxIDEuMDg1LTIuOTY0em0tMTMuMzk1LjAwNGMuMjc4Ljk2LjY0NSAxLjk1NyAxLjEgMi45OC0uNDUgMS4wMTctLjgxMiAyLjAxLTEuMDg2IDIuOTY0LS40ODQtLjE1LS45NDQtLjMxOC0xLjM3LS41LTEuNzMyLS43MzctMi44NTItMS43MDYtMi44NTItMi40NzQgMC0uNzY4IDEuMTItMS43NDIgMi44NTItMi40NzYuNDItLjE4Ljg4LS4zNDIgMS4zNTYtLjQ5NHptMTEuNjc4IDQuMjhjLjI2NS42NTcuNDkgMS4zMTIuNjc2IDEuOTQ4LS42NC4xNTctMS4zMTYuMjktMi4wMTYuMzkuMjQtLjM3NS40OC0uNzYyLjcwNS0xLjE1OC4yMjUtLjM5LjQzNS0uNzg4LjYzNi0xLjE4em0tOS45NDUuMDJjLjIuMzkyLjQxLjc4My42NCAxLjE3NS4yMy4zOS40NjUuNzcyLjcwNSAxLjE0My0uNjk1LS4xMDItMS4zNjUtLjIzLTIuMDA2LS4zODYuMTgtLjYzLjQwNi0xLjI4Mi42Ni0xLjkzM3pNMTcuOTIgMTYuMzJjLjExMi40OTMuMi45NjguMjU0IDEuNDIzLjIzIDEuODY4LS4wNTQgMy4zMi0uNzE0IDMuNzA4LS4xNDcuMDktLjMzOC4xMjgtLjU2My4xMjgtMS4wMTIgMC0yLjUxNC0uODA3LTQuMTEtMi4yOC42ODYtLjcyIDEuMzctMS41MzYgMi4wMi0yLjQ0IDEuMTA3LS4xMTggMi4xNTQtLjMgMy4xMTMtLjU0em0tMTEuODMuMDFjLjk2LjIzNCAyLjAwNi40MTUgMy4xMDcuNTMyLjY2LjkwNSAxLjM0NSAxLjcyNyAyLjAzNSAyLjQ0Ni0xLjU5NSAxLjQ4My0zLjA5MiAyLjI5NS00LjExIDIuMjk1LS4yMi0uMDA1LS40MDYtLjA1LS41NTMtLjEzMi0uNjY2LS4zOC0uOTU1LTEuODM0LS43My0zLjcwMy4wNTQtLjQ2LjE0Mi0uOTQ0LjI1LTEuNDM4em00LjU2LjY0Yy40NC4wMi44OS4wMzQgMS4zNDUuMDM0LjQ2IDAgLjkxNS0uMDEgMS4zNi0uMDM0LS40NC41NzItLjg5NSAxLjA5NS0xLjM0NSAxLjU2NS0uNDU1LS40Ny0uOTEtLjk5My0xLjM2LTEuNTY1eiIvPjwvc3ZnPg==;imageAspect=1;editable=0;connectable=0;movable=0;resizable=0;" vertex="1" parent="stack">
+          <mxGeometry x="12" y="12" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="agent" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;b&gt;&lt;font color=&quot;#0f172a&quot; style=&quot;font-size:12px&quot;&gt;Agents&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;i&gt;&lt;font color=&quot;#1e293b&quot; style=&quot;font-size:10px&quot;&gt;[Claude Code · Codex · OpenCode]&lt;/font&gt;&lt;/i&gt;&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#ecfdf5;html=1;whiteSpace=wrap;strokeColor=#059669;strokeWidth=1.5;align=left;verticalAlign=top;spacingLeft=50;spacingTop=6;spacingRight=8;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=12;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="569" y="200" width="250" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="agent__icon" value="" style="shape=image;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjMzc3NmFiIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+UHl0aG9uPC90aXRsZT48cGF0aCBkPSJNMTQuMjUuMThsLjkuMi43My4yNi41OS4zLjQ1LjMyLjM0LjM0LjI1LjM0LjE2LjMzLjEuMy4wNC4yNi4wMi4yLS4wMS4xM1Y4LjVsLS4wNS42My0uMTMuNTUtLjIxLjQ2LS4yNi4zOC0uMy4zMS0uMzMuMjUtLjM1LjE5LS4zNS4xNC0uMzMuMS0uMy4wNy0uMjYuMDQtLjIxLjAySDguNzdsLS42OS4wNS0uNTkuMTQtLjUuMjItLjQxLjI3LS4zMy4zMi0uMjcuMzUtLjIuMzYtLjE1LjM3LS4xLjM1LS4wNy4zMi0uMDQuMjctLjAyLjIxdjMuMDZIMy4xN2wtLjIxLS4wMy0uMjgtLjA3LS4zMi0uMTItLjM1LS4xOC0uMzYtLjI2LS4zNi0uMzYtLjM1LS40Ni0uMzItLjU5LS4yOC0uNzMtLjIxLS44OC0uMTQtMS4wNS0uMDUtMS4yMy4wNi0xLjIyLjE2LTEuMDQuMjQtLjg3LjMyLS43MS4zNi0uNTcuNC0uNDQuNDItLjMzLjQyLS4yNC40LS4xNi4zNi0uMS4zMi0uMDUuMjQtLjAxaC4xNmwuMDYuMDFoOC4xNnYtLjgzSDYuMThsLS4wMS0yLjc1LS4wMi0uMzcuMDUtLjM0LjExLS4zMS4xNy0uMjguMjUtLjI2LjMxLS4yMy4zOC0uMi40NC0uMTguNTEtLjE1LjU4LS4xMi42NC0uMS43MS0uMDYuNzctLjA0Ljg0LS4wMiAxLjI3LjA1em0tNi4zIDEuOThsLS4yMy4zMy0uMDguNDEuMDguNDEuMjMuMzQuMzMuMjIuNDEuMDkuNDEtLjA5LjMzLS4yMi4yMy0uMzQuMDgtLjQxLS4wOC0uNDEtLjIzLS4zMy0uMzMtLjIyLS40MS0uMDktLjQxLjA5em0xMy4wOSAzLjk1bC4yOC4wNi4zMi4xMi4zNS4xOC4zNi4yNy4zNi4zNS4zNS40Ny4zMi41OS4yOC43My4yMS44OC4xNCAxLjA0LjA1IDEuMjMtLjA2IDEuMjMtLjE2IDEuMDQtLjI0Ljg2LS4zMi43MS0uMzYuNTctLjQuNDUtLjQyLjMzLS40Mi4yNC0uNC4xNi0uMzYuMDktLjMyLjA1LS4yNC4wMi0uMTYtLjAxaC04LjIydi44Mmg1Ljg0bC4wMSAyLjc2LjAyLjM2LS4wNS4zNC0uMTEuMzEtLjE3LjI5LS4yNS4yNS0uMzEuMjQtLjM4LjItLjQ0LjE3LS41MS4xNS0uNTguMTMtLjY0LjA5LS43MS4wNy0uNzcuMDQtLjg0LjAxLTEuMjctLjA0LTEuMDctLjE0LS45LS4yLS43My0uMjUtLjU5LS4zLS40NS0uMzMtLjM0LS4zNC0uMjUtLjM0LS4xNi0uMzMtLjEtLjMtLjA0LS4yNS0uMDItLjIuMDEtLjEzdi01LjM0bC4wNS0uNjQuMTMtLjU0LjIxLS40Ni4yNi0uMzguMy0uMzIuMzMtLjI0LjM1LS4yLjM1LS4xNC4zMy0uMS4zLS4wNi4yNi0uMDQuMjEtLjAyLjEzLS4wMWg1Ljg0bC42OS0uMDUuNTktLjE0LjUtLjIxLjQxLS4yOC4zMy0uMzIuMjctLjM1LjItLjM2LjE1LS4zNi4xLS4zNS4wNy0uMzIuMDQtLjI4LjAyLS4yMVY2LjA3aDIuMDlsLjE0LjAxem0tNi40NyAxNC4yNWwtLjIzLjMzLS4wOC40MS4wOC40MS4yMy4zMy4zMy4yMy40MS4wOC40MS0uMDguMzMtLjIzLjIzLS4zMy4wOC0uNDEtLjA4LS40MS0uMjMtLjMzLS4zMy0uMjMtLjQxLS4wOC0uNDEuMDh6Ii8+PC9zdmc+;imageAspect=1;editable=0;connectable=0;movable=0;resizable=0;" vertex="1" parent="agent">
+          <mxGeometry x="12" y="12" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="github" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;b&gt;&lt;font color=&quot;#0f172a&quot; style=&quot;font-size:12px&quot;&gt;GitHub&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;i&gt;&lt;font color=&quot;#1e293b&quot; style=&quot;font-size:10px&quot;&gt;[repos · PRs · issues]&lt;/font&gt;&lt;/i&gt;&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#f1f5f9;html=1;whiteSpace=wrap;strokeColor=#64748b;strokeWidth=1.5;align=left;verticalAlign=top;spacingLeft=50;spacingTop=6;spacingRight=8;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=12;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="879" y="200" width="190" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="github__icon" value="" style="shape=image;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNDc1NTY5IiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxwYXRoIGQ9Ik0yIDEyaDIwTTEyIDJhMTUgMTUgMCAwIDEgMCAyME0xMiAyYTE1IDE1IDAgMCAwIDAgMjAiLz48L3N2Zz4K;imageAspect=1;editable=0;connectable=0;movable=0;resizable=0;" vertex="1" parent="github">
+          <mxGeometry x="12" y="12" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="ops" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;&lt;b&gt;&lt;font color=&quot;#0f172a&quot; style=&quot;font-size:12px&quot;&gt;Ops repo&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;i&gt;&lt;font color=&quot;#1e293b&quot; style=&quot;font-size:10px&quot;&gt;[private · STATE.md]&lt;/font&gt;&lt;/i&gt;&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#f5f3ff;html=1;whiteSpace=wrap;strokeColor=#7c3aed;strokeWidth=1.5;align=left;verticalAlign=top;spacingLeft=50;spacingTop=6;spacingRight=8;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=12;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="1129" y="200" width="180" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ops__icon" value="" style="shape=image;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDg5MWIyIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48cmVjdCB4PSIzIiB5PSIyIiB3aWR0aD0iMTgiIGhlaWdodD0iNiIgcng9IjEuNSIvPjxyZWN0IHg9IjMiIHk9IjkiIHdpZHRoPSIxOCIgaGVpZ2h0PSI2IiByeD0iMS41Ii8+PHJlY3QgeD0iMyIgeT0iMTYiIHdpZHRoPSIxOCIgaGVpZ2h0PSI2IiByeD0iMS41Ii8+PHBhdGggZD0iTTcgNWguMDFNNyAxMmguMDFNNyAxOWguMDFNMTEgNWg2TTExIDEyaDZNMTEgMTloNiIvPjwvc3ZnPgo=;imageAspect=1;editable=0;connectable=0;movable=0;resizable=0;" vertex="1" parent="ops">
+          <mxGeometry x="12" y="12" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="note-1" value="&lt;span style=&quot;font-variant-ligatures:none&quot;&gt;end-of-task review&lt;br&gt;make check green&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#ffffff;strokeColor=#475569;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=JetBrains Mono,Noto Sans Mono,DejaVu Sans Mono,monospace;fontSize=10;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="564" y="494" width="260" height="28" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

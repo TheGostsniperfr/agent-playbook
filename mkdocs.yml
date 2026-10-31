@@ -1,0 +1,67 @@
+site_name: agent-playbook
+site_description: Run software projects with autonomous AI agents
+site_url: https://thegostsniperfr.github.io/agent-playbook/
+repo_url: https://github.com/TheGostsniperfr/agent-playbook
+edit_uri: edit/main/
+docs_dir: docs
+exclude_docs: |
+  architecture/
+  diagrams/README.md
+  overlay/nix/
+  overlay/tests/
+  overlay/examples/
+  skills/*/tests/
+  skills/*/scripts/
+  skills/*/assets/
+  **/__pycache__/
+theme:
+  name: material
+  features: [navigation.sections, navigation.top, content.code.copy, search.highlight]
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: teal
+      toggle: {icon: material/brightness-7, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: teal
+      toggle: {icon: material/brightness-4, name: Light mode}
+markdown_extensions:
+  - admonition
+  - tables
+  - attr_list
+  - toc: {permalink: true}
+  - pymdownx.superfences
+  - pymdownx.details
+nav:
+  - Home: index.md
+  - Deploy it: deploy.md
+  - How it works: how-it-works.md
+  - Skills: skills-catalog.md
+  - Runbook:
+      - Start: runbook/START.md
+      - Map: runbook/README.md
+      - Workflow: runbook/WORKFLOW.md
+      - Adapt: runbook/ADAPT.md
+      - Phases:
+          - runbook/phases/00-access-guardrails.md
+          - runbook/phases/01-audit.md
+          - runbook/phases/02-foundation.md
+          - runbook/phases/03-docs-diagrams.md
+          - runbook/phases/04-tracker-review.md
+          - runbook/phases/05-harness-skills.md
+          - runbook/phases/06-tests-ci.md
+          - runbook/phases/07-security.md
+          - runbook/phases/08-product.md
+          - runbook/phases/09-improve-watch.md
+      - Patterns:
+          - runbook/patterns/live-state.md
+          - runbook/patterns/no-secret-publishing.md
+          - runbook/patterns/deterministic-guards.md
+      - Decisions: runbook/DECISIONS.md
+      - Ideas: runbook/IDEAS.md
+      - Maintain: runbook/MAINTAIN.md
+  - Skill layers: overlay/README.md
+  - Tech watch: veille/README.md
