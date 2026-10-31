@@ -27,7 +27,7 @@
 (function () {
   "use strict";
   var DATA = JSON.parse(document.getElementById("chantier-data").textContent);
-  var db = null, me = null, timers = {}, busy = {}, again = {}, dirty = {};
+  var db = null, me = null, timers = {}, busy = {}, again = {}, dirty = {}, edits = {};
 
   function $(id) { return document.getElementById(id); }
   function card(id) { return document.querySelector('[data-decision="' + id + '"]'); }
@@ -47,11 +47,12 @@
     if (!db) return;
     if (busy[id]) { again[id] = true; return; }
     busy[id] = true;
-    var c = card(id), s = c.querySelector(".saved"), v = current(id);
+    // local edits win until saved: dirty[id] clears only when the save of the latest edit resolves
+    var c = card(id), s = c.querySelector(".saved"), v = current(id), n = edits[id] || 0;
     status(s, "", "Saving...");
     // a synchronous throw must not leave busy[] stuck or the status on "Saving...": wrap the call
     new Promise(function (ok) { ok(db.doc("answers/" + id).set({ chantier: DATA.id, decision: id, choice: v.choice, text: v.text, by: me, at: stamp() })); })
-      .then(function () { dirty[id] = false; status(s, "ok", "Saved"); })
+      .then(function () { if ((edits[id] || 0) === n) dirty[id] = false; status(s, "ok", "Saved"); })
       .catch(function (e) { status(s, "err", "Not saved: " + (e && e.message || "error") + ". Use Copy my answers."); })
       .then(function () { busy[id] = false; if (again[id]) { again[id] = false; save(id); } });
   }
@@ -59,10 +60,10 @@
   DATA.decisions.forEach(function (d) {
     var c = card(d.id), ta = c.querySelector("textarea");
     c.querySelectorAll("input[type=radio]").forEach(function (r) {
-      r.addEventListener("change", function () { dirty[d.id] = true; save(d.id); });
+      r.addEventListener("change", function () { dirty[d.id] = true; edits[d.id] = (edits[d.id] || 0) + 1; save(d.id); });
     });
     ta.addEventListener("input", function () {
-      dirty[d.id] = true; // text next to the default is a note; with "Other" it is the answer
+      dirty[d.id] = true; edits[d.id] = (edits[d.id] || 0) + 1; // text next to the default is a note; with "Other" it is the answer
       clearTimeout(timers[d.id]);
       timers[d.id] = setTimeout(function () { save(d.id); }, 900);
     });

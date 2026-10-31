@@ -48,11 +48,12 @@ h1 span{color:var(--orange)}
 .pill.ready{color:var(--orange-ink);border-color:var(--orange)}
 .pill.approve{color:var(--teal);border-color:var(--teal)}
 .pill.changes{color:var(--red);border-color:var(--red)}
-.body{padding:0 18px 18px 76px;display:flex;flex-direction:column;gap:16px;animation:unfold .32s ease both}
+.body{padding:0 18px 18px 76px;display:flex;flex-direction:column;gap:16px}
+.body.opening{animation:unfold .32s ease both}
 @keyframes unfold{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 .card{transition:border-color .3s ease,box-shadow .3s ease,opacity .3s ease;scroll-margin-top:calc(env(safe-area-inset-top,0px) + 16px)}
 .dec .why{margin:0;font-size:14px}.dec .why b{font-weight:650}
-@media (prefers-reduced-motion:reduce){.body{animation:none}.card{transition:none}}
+@media (prefers-reduced-motion:reduce){.body.opening{animation:none}.card{transition:none}}
 .links{display:flex;flex-direction:column;gap:6px;font-size:14.5px;margin:0;padding:0;list-style:none}
 .links small{color:var(--muted)}
 .dec{border-top:1px dashed var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px}
@@ -110,7 +111,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
    answers/<id> {verdict: approve|changes|later|"", notes, decisions{<id>:{choice, other?}}, at}   written by the page */
 (function(){
   const $ = (s, el=document) => el.querySelector(s);
-  let db = null, items = [], answers = {}, open = new Set(), timers = {}, saveState = {};
+  let db = null, items = [], answers = {}, open = new Set(), timers = {}, saveState = {}, pending = {}, justOpened = new Set();
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const safeUrl = u => /^https:\/\//.test(String(u || "")) ? u : "#";
 
@@ -132,7 +133,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
   function draw(){
     const list = items.slice().sort((a,b) => rank(a)-rank(b) || (a.order||0)-(b.order||0));
     let nextId = (list.find(i => rank(i) === 1) || {}).id;
-    if (!open.size && nextId) open.add(nextId);
+    if (!open.size && nextId) { open.add(nextId); justOpened.add(nextId); }
     const c = {ready:0, building:0, approved:0, changes:0};
     list.forEach(i => { const v = ans(i.id).verdict; if (i.status==="building") c.building++; else if (v==="approve") c.approved++; else if (v==="changes") { c.changes++; c.ready++; } else c.ready++; });
     $("#m-ready").textContent = c.ready; $("#m-building").textContent = c.building;
@@ -141,6 +142,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
     if (!list.length){ st.innerHTML = '<div class="empty">Nothing waiting for you right now. When an agent finishes a chantier it adds a card here.</div>'; return; }
     const focusId = document.activeElement && document.activeElement.id;
     st.innerHTML = list.map((it, idx) => card(it, idx+1, it.id === nextId)).join("");
+    justOpened.clear(); // the unfold animation plays once, on the render that opened the card
     if (focusId && document.getElementById(focusId)) { const el = document.getElementById(focusId); el.focus();
       // setSelectionRange throws on radios and buttons: only text fields, and never let it break the render
       if ((el.tagName === "TEXTAREA" || el.type === "text") && el.value) { try { el.setSelectionRange(el.value.length, el.value.length); } catch(e){} } }
@@ -177,26 +179,29 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
           <button type="button" data-c="${esc(it.id)}" data-v="later" class="${a.verdict==="later"?"on":""}">Later</button>
           <span class="saved${/^Not saved/.test(saveState[it.id]||"") ? " err" : ""}" id="saved-${it.id}">${esc(saveState[it.id] || (a.at ? "Saved" : ""))}</span>
         </div>`;
-      body = `<div class="body">${it.detail?`<p style="margin:0;font-size:15px">${esc(it.detail)}</p>`:""}${links?`<ul class="links">${links}</ul>`:""}${decs}${verdict}</div>`;
+      body = `<div class="body${justOpened.has(it.id) ? " opening" : ""}">${it.detail?`<p style="margin:0;font-size:15px">${esc(it.detail)}</p>`:""}${links?`<ul class="links">${links}</ul>`:""}${decs}${verdict}</div>`;
     }
     return `<article class="${cls}" id="card-${esc(it.id)}"><button class="head" type="button" data-toggle="${esc(it.id)}" aria-expanded="${isOpen}"><span class="n">${n}</span><span><h2>${esc(it.title)}</h2><p>${esc(it.summary)}</p></span>${pill}</button>${body}</article>`;
   }
+  // Local edits win until saved: pending[id] is stamped on every local change, incoming snapshots
+  // skip pending docs, and only the save carrying the latest stamp clears it.
   function save(id){
     clearTimeout(timers[id]);
+    const stamp = Date.now() + Math.random(); pending[id] = stamp;
     timers[id] = setTimeout(async () => {
-      const a = ans(id); a.at = new Date().toISOString(); answers[id] = a;
+      const a = JSON.parse(JSON.stringify(ans(id))); a.at = new Date().toISOString(); answers[id] = a;
       const show = (txt) => { saveState[id] = txt; const s = document.getElementById("saved-"+id);
         if (s){ s.textContent = txt; s.classList.toggle("err", /^Not saved/.test(txt)); } };
       if (!db){ show("Not saved: open signed in"); alertBox("Not saved: open this page signed in to claude.ai."); return; }
       show("Saving…");
-      try { await db.collection("answers").doc(id).set(a); show("Saved"); if (!Object.values(saveState).some(v => /^Not saved/.test(v))) alertBox(""); }
-      catch(e){ const msg = "Not saved (" + (e && (e.code || e.message) || "error") + ")"; show(msg);
+      try { await db.collection("answers").doc(id).set(a); if (pending[id] === stamp) delete pending[id]; show("Saved"); if (!Object.values(saveState).some(v => /^Not saved/.test(v))) alertBox(""); }
+      catch(e){ const msg = "Not saved (" + (e && (e.code || e.message) || "error") + ")"; show(msg + ", your choice is kept on screen");
         alertBox(msg + ": your last change to \"" + ((items.find(i => i.id === id) || {}).title || id) + "\" is not stored. Try again or reload."); }
     }, 500);
   }
   document.addEventListener("click", e => {
     const t = e.target.closest("[data-toggle]");
-    if (t){ const id = t.dataset.toggle; open.has(id) ? open.delete(id) : open.add(id); render(); return; }
+    if (t){ const id = t.dataset.toggle; if (open.has(id)) open.delete(id); else { open.add(id); justOpened.add(id); } render(); return; }
     const v = e.target.closest("button[data-v]");
     if (v){ const id = v.dataset.c, a = ans(id); a.verdict = a.verdict === v.dataset.v ? "" : v.dataset.v;
       const it = items.find(i => i.id === id);
@@ -206,7 +211,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
         // collapse this card, open the next ready one and bring it into view
         open.delete(id);
         const next = items.slice().sort((x,y) => rank(x)-rank(y) || (x.order||0)-(y.order||0)).find(i => i.id !== id && rank(i) === 1);
-        if (next) open.add(next.id);
+        if (next) { open.add(next.id); justOpened.add(next.id); }
         save(id); render();
         if (next) requestAnimationFrame(() => { const el = document.getElementById("card-" + next.id);
           if (el) el.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"}); });
@@ -226,12 +231,18 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
   (async () => {
     try { db = window.claude && await window.claude.use("db"); } catch(e){ db = null; }
     if (!db){ $("#empty").textContent = "The stack could not load here. Open the page signed in to claude.ai."; return; }
-    db.collection("chantiers").onSnapshot(s => { items = s.docs.map(d => Object.assign({id:d.id}, d.data())); render(); },
+    // Render only on real changes: a snapshot identical to what is shown is ignored.
+    let lastItems = "";
+    db.collection("chantiers").onSnapshot(s => { const next = s.docs.map(d => Object.assign({id:d.id}, d.data())); const key = JSON.stringify(next);
+      if (key === lastItems) return; lastItems = key; items = next; render(); },
       () => { $("#empty").textContent = "The stack could not load. Reload the page."; });
     db.collection("answers").onSnapshot(s => {
-      const editing = document.activeElement && (document.activeElement.dataset||{}).c;
-      s.docs.forEach(d => { if (d.id !== editing) answers[d.id] = d.data(); });
-      if (items.length && !editing) render();
+      const ae = document.activeElement, typing = ae && (ae.tagName === "TEXTAREA" || (ae.tagName === "INPUT" && ae.type === "text"));
+      const editing = typing && (ae.dataset||{}).c;
+      let changed = false;
+      s.docs.forEach(d => { if (d.id === editing || pending[d.id]) return;
+        const v = d.data(); if (JSON.stringify(v) !== JSON.stringify(answers[d.id])) { answers[d.id] = v; changed = true; } });
+      if (items.length && changed && !typing) render();
     });
   })();
 })();

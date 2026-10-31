@@ -20,5 +20,15 @@
   re-renders, and a failed write also shows a page alert.
 - Chantier page: a synchronous throw from the db call is caught like a rejected one, so the status
   never sticks on "Saving..." and later saves are not blocked.
-- New `tests/test_browser.py` + `tests/browser_save.js`: headless regression test (skipped without
-  Node and Playwright). New rule: a render error must never swallow a save.
+- Fix (stack page): an incoming snapshot could overwrite a local choice before the debounced
+  save ran (WebKit does not focus radios, so the "editing" guard missed it) and the save then
+  wrote the OLD answer. Local changes are stamped `pending[id]`; snapshots skip pending docs; the
+  stamp clears only when that save resolves; the written answer is a deep copy.
+- Fix (stack page): every snapshot re-rendered and replayed the unfold animation, so clicks
+  landed on moving elements. Snapshots render only when the JSON changed, and the animation plays
+  only on cards that were just opened.
+- Chantier page: `dirty[id]` clears only when the save of the latest edit resolves.
+- New `tests/test_browser.py` + `tests/browser_save.js`: headless regression tests (skipped
+  without Node and Playwright) for saves, "Not saved" display, the snapshot race and re-render
+  replay. New rules: a render error never swallows a save; local edits win until saved; render
+  only on real changes; animations never on re-render.

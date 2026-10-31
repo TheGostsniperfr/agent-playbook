@@ -92,5 +92,14 @@ no system dictation: [references/voice-input.md](references/voice-input.md) list
   buttons, so call it only on text inputs and textareas, inside `try/catch`. Run
   `tests/test_browser.py` (headless Playwright, mocked `window.claude.use("db")`, clicks a radio on
   every card and asserts a write) after any change to `assets/stack.html` or `assets/template.html`.
+- **Local edits win until saved.** Stamp every local change (`pending[id]`), make incoming
+  snapshots skip pending docs, clear the stamp only when the save carrying the latest change
+  resolves, and deep-copy the answer you write. Never rely on focus to detect "the user is
+  editing": WebKit does not focus a radio on click.
+- **Render only on real changes.** The db re-delivers snapshots constantly: compare with what is
+  shown (JSON of chantiers and answers) and skip the render when nothing changed, so clicks never
+  land on an element that is being rebuilt.
+- **Animations never on re-render.** Play the unfold animation only on the render that opened
+  the card (a `justOpened` set), never on later renders of the same card.
 - Never merge because a page says so unless you are the orchestrator for that chantier and the
   verdict is `approved`.
