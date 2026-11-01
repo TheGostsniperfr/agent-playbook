@@ -57,9 +57,19 @@
     },
     "verified": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
     "not_verified": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+    "localPrompt": {"$ref": "#/$defs/localPrompt"},
     "footer": {"type": "string", "maxLength": 600}
   },
   "$defs": {
+    "localPrompt": {"type": "object", "required": ["intro", "steps"], "additionalProperties": false,
+      "description": "Required when the page or card has owner-only actions (a merge step with status 'you', or an option starting with 'Done' or 'Let agents'). The page turns it into a ready-to-paste prompt for the owner's local Claude Code: intro, context, one line per decision not marked Done or 'Let agents...' (with the owner's choice and Other text, plus its step), extra lines, links, the owner's notes, the outro, then fixed safety rules.",
+      "properties": {
+        "intro": {"type": "string", "minLength": 10, "maxLength": 400, "description": "First line of the prompt: what the task is."},
+        "steps": {"type": "object", "description": "decision id -> how to do it: concrete commands or click paths, safe by default, respecting the owner's choice."},
+        "extra": {"type": "array", "maxItems": 12, "items": {"type": "string", "minLength": 10, "maxLength": 400}, "description": "Owner actions that are not decisions (e.g. a merge step with status 'you')."},
+        "outro": {"type": "string", "maxLength": 600, "description": "Added before the fixed safety rules, never replaces them."},
+        "language": {"type": "string", "maxLength": 30, "description": "Language of the final summary, e.g. 'French'."}
+      }},
     "link": {"type": "object", "required": ["label", "url"], "additionalProperties": false,
       "properties": {"label": {"type": "string"}, "url": {"type": "string", "pattern": "^https://"}}},
     "gap": {"type": "object", "required": ["title", "detail"], "additionalProperties": false,

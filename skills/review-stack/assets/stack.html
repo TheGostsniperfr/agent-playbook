@@ -74,6 +74,10 @@ textarea{min-height:76px;resize:vertical}
 .verdict button.on[data-v=later]{background:var(--slate);color:var(--panel)}
 .saved{font-size:13px;color:var(--muted);margin-left:auto}
 .saved.err{color:var(--red);font-weight:650}
+.cc{display:flex;flex-direction:column;gap:8px;background:var(--sunk);border-radius:10px;padding:12px 14px}
+.cc p{margin:0;font-size:13.5px;color:var(--muted)}
+.cc button{align-self:flex-start;font:inherit;font-size:14.5px;font-weight:650;padding:8px 14px;border-radius:8px;border:1px solid var(--orange);background:var(--orange);color:var(--panel);cursor:pointer}
+.cc textarea{min-height:140px;font-family:var(--f-mono);font-size:12.5px}
 .alert{background:var(--panel);border:1px solid var(--red);color:var(--red);border-radius:8px;padding:10px 14px;font-size:14.5px;font-weight:600}
 .empty{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:28px;color:var(--muted)}
 footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
@@ -107,7 +111,9 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <script>
 /* db: chantiers/<id> {title, summary, order, status: building|ready|done, detail?, links?[{label,url,note?}],
-   decisions?[{id, q, why, options[string], default}]}   why: one plain line on what this is and why it is asked   written by agents
+   decisions?[{id, q, why, options[string], default}],   why: one plain line on what this is and why it is asked
+   localPrompt?{intro, steps{<decision id>: "how to do it"}, extra?[string], outro?, language?}}   written by agents
+   localPrompt is required on every card with owner-only actions: the page turns it into a prompt for the owner's Claude Code.
    answers/<id> {verdict: approve|changes|later|"", notes, decisions{<id>:{choice, other?}}, at}   written by the page */
 (function(){
   const $ = (s, el=document) => el.querySelector(s);
@@ -170,6 +176,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
         const other = choice === "Other" ? `<input type="text" id="o-${it.id}-${d.id}" data-c="${esc(it.id)}" data-d="${esc(d.id)}" data-other="1" placeholder="Your answer (dictation works)" value="${esc(cur.other||"")}">` : "";
         return `<div class="dec"><h3>${esc(d.q)}</h3>${d.why?`<p class="why"><b>Why we ask:</b> ${esc(d.why)}</p>`:""}<div class="opts" role="radiogroup">${opts}</div>${other}</div>`;
       }).join("");
+      const cc = (!building && it.localPrompt) ? `<div class="cc"><p>Things your local Claude Code can do for you. The prompt includes your choices and notes on this card, and skips what you marked Done or left to the agents.</p><button type="button" data-copy="${esc(it.id)}">Copy prompt for Claude Code</button><textarea id="cc-${esc(it.id)}" readonly hidden aria-label="Prompt for Claude Code"></textarea></div>` : "";
       const verdict = building ? "" : `
         <label for="notes-${it.id}" style="font-weight:650;font-size:14.5px">Notes for the agents</label>
         <textarea id="notes-${it.id}" data-c="${esc(it.id)}" data-notes="1" placeholder="Anything to add, change or ask. Dictation works.">${esc(a.notes||"")}</textarea>
@@ -179,7 +186,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
           <button type="button" data-c="${esc(it.id)}" data-v="later" class="${a.verdict==="later"?"on":""}">Later</button>
           <span class="saved${/^Not saved/.test(saveState[it.id]||"") ? " err" : ""}" id="saved-${it.id}">${esc(saveState[it.id] || (a.at ? "Saved" : ""))}</span>
         </div>`;
-      body = `<div class="body${justOpened.has(it.id) ? " opening" : ""}">${it.detail?`<p style="margin:0;font-size:15px">${esc(it.detail)}</p>`:""}${links?`<ul class="links">${links}</ul>`:""}${decs}${verdict}</div>`;
+      body = `<div class="body${justOpened.has(it.id) ? " opening" : ""}">${it.detail?`<p style="margin:0;font-size:15px">${esc(it.detail)}</p>`:""}${links?`<ul class="links">${links}</ul>`:""}${decs}${cc}${verdict}</div>`;
     }
     return `<article class="${cls}" id="card-${esc(it.id)}"><button class="head" type="button" data-toggle="${esc(it.id)}" aria-expanded="${isOpen}"><span class="n">${n}</span><span><h2>${esc(it.title)}</h2><p>${esc(it.summary)}</p></span>${pill}</button>${body}</article>`;
   }
@@ -199,7 +206,45 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
         alertBox(msg + ": your last change to \"" + ((items.find(i => i.id === id) || {}).title || id) + "\" is not stored. Try again or reload."); }
     }, 500);
   }
-  document.addEventListener("click", e => {
+  // Copy prompt for Claude Code: owner-only actions become a ready-to-paste prompt. Decisions the
+  // owner marked Done or left to the agents are skipped; the safety rules are always appended.
+  const SKIP = /^(done|let agents)/i;
+  function safetyRules(text, lp){
+    const r = ["never force-push", "never print, log or paste a secret, token or password", "ask me before anything destructive (delete, overwrite, rotate, revoke) or anything that touches production"];
+    if (/\bvault\b/i.test(text)) r.push("change Vault only through Terraform, never by hand");
+    return "Rules: " + r.join("; ") + ". At the end, give me a short summary " + (lp.language ? "in " + lp.language : "in the language I write to you in") + " of what you did and what is left, with full links.";
+  }
+  function buildPrompt(it){
+    const a = ans(it.id), lp = it.localPrompt || {}, out = [];
+    out.push(lp.intro || ("Task from my review stack: " + it.title + "."));
+    if (it.detail || it.summary) out.push("Context: " + (it.detail || it.summary));
+    const steps = [];
+    (it.decisions||[]).forEach(d => {
+      const cur = (a.decisions||{})[d.id] || {}, choice = cur.choice || d.default;
+      if (SKIP.test(choice||"")) return;
+      let line = "- " + d.q + (/^later$/i.test(choice||"") ? "" : " (my choice: " + choice + (choice === "Other" && cur.other ? ": " + cur.other : "") + ")");
+      const how = (lp.steps||{})[d.id];
+      if (how) line += "\n  How: " + how;
+      steps.push(line);
+    });
+    (lp.extra||[]).forEach(x => steps.push("- " + x));
+    if (steps.length) out.push("Do these, in order, asking me before anything destructive or that touches production:\n" + steps.join("\n"));
+    else out.push("Everything on this card is marked Done or left to the agents: just verify it and report.");
+    const links = (it.links||[]).filter(l => /^https:\/\//.test(l.url||"")).map(l => "- " + l.label + ": " + l.url);
+    if (links.length) out.push("Links:\n" + links.join("\n"));
+    if (a.notes) out.push("My notes: " + a.notes);
+    if (lp.outro) out.push(lp.outro);
+    out.push(safetyRules(out.join("\n"), lp));
+    return out.join("\n\n");
+  }
+  document.addEventListener("click", async e => {
+    const cp = e.target.closest("button[data-copy]");
+    if (cp){ const it = items.find(i => i.id === cp.dataset.copy); if (!it) return;
+      const text = buildPrompt(it), ta = document.getElementById("cc-" + it.id); ta.value = text;
+      // fallback: clipboard missing or refused (frame permissions) -> show the text, selected
+      try { await navigator.clipboard.writeText(text); cp.textContent = "Copied, paste it into Claude Code"; ta.hidden = true; }
+      catch(err){ ta.hidden = false; ta.focus(); ta.select(); cp.textContent = "Select all and copy the text below"; }
+      return; }
     const t = e.target.closest("[data-toggle]");
     if (t){ const id = t.dataset.toggle; if (open.has(id)) open.delete(id); else { open.add(id); justOpened.add(id); } render(); return; }
     const v = e.target.closest("button[data-v]");

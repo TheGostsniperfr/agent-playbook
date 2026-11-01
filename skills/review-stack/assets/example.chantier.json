@@ -52,5 +52,14 @@
   "not_verified": [
     {"title": "macOS", "detail": "Nothing ran on a Mac."}
   ],
+  "localPrompt": {
+    "intro": "Finish the owner steps of the Agent Kit v2 chantier on my machine.",
+    "steps": {
+      "sandbox": "Open ~/.claude/settings.json, set \"sandbox\": {\"enabled\": ...} to match my choice, and show me the diff before saving.",
+      "force-with-lease": "Run `grep -n force-with-lease ~/.claude/settings.json`, set the deny rule to match my choice, and show me the diff before saving."
+    },
+    "extra": ["Install the Claude GitHub App: open https://github.com/apps/claude, choose Configure, and add only the repos I name; do not change other installations."],
+    "language": "English"
+  },
   "footer": "Example data from the Agent Kit v2 chantier, 29 October 2026."
 }

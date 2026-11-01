@@ -122,6 +122,47 @@ class Context(unittest.TestCase):
         self.assertEqual(render.lint_card(good), [])
 
 
+class ValidateLocalPrompt(unittest.TestCase):
+    """Every owner-action card ships a localPrompt: concrete, safe by default, keyed by real decisions."""
+
+    def test_owner_step_needs_local_prompt(self):
+        d = copy.deepcopy(EXAMPLE)
+        del d["localPrompt"]
+        self.assertTrue(any("localPrompt: required" in e for e in render.check(d)))
+        d["merge"] = [m for m in d["merge"] if m["status"] != "you"]
+        self.assertEqual(render.check(d), [])
+
+    def test_steps_keyed_by_decisions_and_safe(self):
+        d = copy.deepcopy(EXAMPLE)
+        d["localPrompt"]["steps"]["nope"] = "Run make something useful"
+        d["localPrompt"]["extra"].append("Then git push --force origin main to finish")
+        d["localPrompt"]["steps"]["sandbox"] = "terraform apply -auto-approve in infra/"
+        errs = render.check(d)
+        self.assertTrue(any("steps.nope: not a decision id" in e for e in errs), errs)
+        self.assertTrue(any("force-push" in e for e in errs), errs)
+        self.assertTrue(any("-auto-approve" in e for e in errs), errs)
+
+    def test_card_with_done_option_needs_local_prompt(self):
+        card = {"title": "T", "summary": "s", "status": "ready", "decisions": [{
+            "id": "tok", "q": "Rotate the token?", "options": ["Done", "Rotate now"], "default": "Rotate now",
+            "why": "The old token showed up in a CI log, so it has to be replaced by a new one."}]}
+        self.assertTrue(any("localPrompt required" in e for e in render.lint_card(card)))
+        card["localPrompt"] = {"intro": "Rotate the CI token on my machine.", "steps": {"tok": "Run `gh secret set CI_TOKEN` and paste the new value when asked."}}
+        self.assertEqual(render.lint_card(card), [])
+        card["localPrompt"]["steps"] = {"other": "x"}
+        errs = render.lint_card(card)
+        self.assertTrue(any("not a decision id" in e for e in errs) and any("say how" in e for e in errs), errs)
+
+    def test_page_has_copy_button(self):
+        html = render.page(EXAMPLE)
+        self.assertIn('id="cc-copy"', html)
+        self.assertIn('id="cc-text" class="copybox" readonly hidden', html)
+        d = copy.deepcopy(EXAMPLE)
+        del d["localPrompt"]
+        d["merge"] = [m for m in d["merge"] if m["status"] != "you"]
+        self.assertNotIn('id="cc-copy"', render.page(d))
+
+
 class Stack(unittest.TestCase):
     def test_stack_moves_to_the_next_card(self):
         with open(os.path.join(SKILL, "assets", "stack.html"), encoding="utf-8") as f:
@@ -131,6 +172,12 @@ class Stack(unittest.TestCase):
         self.assertIn("prefers-reduced-motion", s)
         self.assertIn("@keyframes unfold", s)
         self.assertIn("safeUrl", s)
+
+    def test_stack_has_copy_prompt(self):
+        with open(os.path.join(SKILL, "assets", "stack.html"), encoding="utf-8") as f:
+            s = f.read()
+        for needle in ("function buildPrompt", "data-copy=", "navigator.clipboard.writeText", "never force-push", "through Terraform"):
+            self.assertIn(needle, s)
 
 if __name__ == "__main__":
     unittest.main()
