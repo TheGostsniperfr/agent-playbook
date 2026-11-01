@@ -3,7 +3,7 @@ name: review-stack
 description: "Build a chantier review page: one HTML artifact that summarises a group of PRs (merge order with URLs and one-line summaries), the decisions the owner must take (options, recommended default, free-text Other), and what was verified or not, with answers saved in the artifact database so the agent can read them back. Also keeps the owner's review stack (the pile of chantier pages to go through). Use when a chantier or multi-PR task is finished and needs the owner's approval, when asked for a review page, decision page or 'pile', or to read back answers from such a page."
 compatibility: "Publishing and answer storage need the claude.ai Artifact tool with the db capability (Claude Code or claude.ai). Elsewhere the page still renders and offers copy-paste answers."
 metadata:
-  version: "1.1.1"
+  version: "1.2.0"
   author: "Brian Perret"
 ---
 
@@ -33,6 +33,8 @@ Files (paths relative to this skill's folder):
    overwrite my own branch only if nobody pushed since I looked"). `render.py` refuses known
    jargon without an explanation; the list is `JARGON` in the script (extend it, do not bypass it).
 3. List what was verified (command and result in a few words) and what was not (and why).
+   If the owner has anything to do by hand (a merge step with status `you`, an option such as
+   "Done" or "Let agents…"), write the `localPrompt` (see "Owner actions" below).
 4. Write `chantier.json` in your scratch directory following the schema, then run
    `python3 scripts/render.py chantier.json -o <scratch>/<id>.html`. Fix every error it prints.
 5. Publish the HTML as an artifact with `capabilities: {"db": {}, "user": {}}`, icon `checklist`,
@@ -51,7 +53,8 @@ page of their own.
 - Add or update the card with `ArtifactData` (`set` when new, `update` with `if_version` when it
   exists), collection `chantiers`, doc id = chantier id:
   `{"order": <int>, "title": ..., "summary": <one line>, "status": "ready",
-  "links": [{"label": "Open the review page", "url": <page URL>}], "decisions": []}`.
+  "links": [{"label": "Open the review page", "url": <page URL>}], "decisions": []}`, plus
+  `localPrompt` when the card has owner actions (below).
   Inline decisions are `{id, q, why, options[], default}`: `why` is required and follows the
   same readable-cold rule. Write the card to a scratch file first and run
   `python3 scripts/render.py --lint-card card.json`; fix every error before `ArtifactData`.
@@ -63,6 +66,31 @@ page of their own.
   `decisions`). When the verdict is given on the chantier's own page, mirror it there with
   `ArtifactData` `set` `answers/<id>` `{"verdict": ..., "notes": "see the review page"}` so the
   card shows it.
+
+## Owner actions: copy prompt for Claude Code
+**Every owner-action card must ship a `localPrompt`, so the owner never retypes instructions.**
+An owner action is anything only the owner can do: a merge step with status `you` on a chantier
+page, or a decision with an option starting with "Done" or "Let agents" on a stack card.
+`render.py` refuses such a page or card without a `localPrompt`.
+
+`localPrompt: {intro, steps: {<decision id>: "how to do it"}, extra?: [...], outro?, language?}`
+(schema: `$defs.localPrompt`). The page shows "Copy prompt for Claude Code" and builds, from the
+owner's current answers: the intro, the context, one line per decision NOT marked Done or "Let
+agents…" (the owner's choice, the Other text or note, then `How:` from `steps`), the `extra` lines
+(owner steps that are not decisions), the links, the owner's notes, the `outro`, then fixed safety
+rules: never force-push, never print a secret, ask before anything destructive or touching
+production, Vault only through Terraform when Vault is mentioned, and a final summary in
+`language` (or the owner's language) with full links. The clipboard is tried first; when the
+frame refuses it, a selected textarea appears so the owner copies by hand.
+- **Steps are concrete commands** (or an exact click path) the local agent can run as written:
+  `gh secret set CI_TOKEN --repo org/app`, not "set the secret".
+- **Safe by default**: show a diff or a plan before applying, no `--force`, no `-auto-approve`,
+  no `--no-verify`, no secret on the command line (prompt for it or read it from the store).
+  `render.py` refuses the obvious unsafe ones (`UNSAFE`).
+- **Respect the owner's choices**: a step says what to do for each option when they differ
+  ("if my choice is Rotate now, …; if Later, only check the expiry date"). The prompt carries the
+  choice; the step must not override it.
+- The fixed safety rules cannot be removed: `outro` adds to them.
 
 ## Read the answers back
 `ArtifactData` `get` on `verdict/current`. When it exists and its `chantier` matches:
@@ -91,7 +119,7 @@ no system dictation: [references/voice-input.md](references/voice-input.md) list
   never a silent console error. Restore focus carefully: `setSelectionRange` throws on radios and
   buttons, so call it only on text inputs and textareas, inside `try/catch`. Run
   `tests/test_browser.py` (headless Playwright, mocked `window.claude.use("db")`, clicks a radio on
-  every card and asserts a write) after any change to `assets/stack.html` or `assets/template.html`.
+  every card and asserts a write, and checks the copy prompt and its textarea fallback) after any change to `assets/stack.html` or `assets/template.html`.
 - **Local edits win until saved.** Stamp every local change (`pending[id]`), make incoming
   snapshots skip pending docs, clear the stamp only when the save carrying the latest change
   resolves, and deep-copy the answer you write. Never rely on focus to detect "the user is

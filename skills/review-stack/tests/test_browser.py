@@ -1,8 +1,10 @@
-"""Headless check that every radio click is saved (stack page and chantier page).
+"""Headless check that every radio click is saved (stack page and chantier page), and that
+"Copy prompt for Claude Code" builds the right prompt, with a textarea fallback.
 
 Runs tests/browser_save.js with Node and Playwright; skipped when either is missing.
 Run: python3 -m unittest discover -s skills/review-stack/tests
 """
+import json
 import os
 import shutil
 import subprocess
@@ -30,6 +32,18 @@ def _node_env():
     return (node, env) if probe.returncode == 0 else (None, None)
 
 
+def owner_steps_chantier():
+    """The example, with a Done and a "Let agents" option to check the copy prompt skips them."""
+    with open(os.path.join(SKILL, "assets", "example.chantier.json"), encoding="utf-8") as f:
+        d = json.load(f)
+    decs = {x["id"]: x for x in d["decisions"]}
+    decs["sandbox"]["options"].append({"id": "done", "label": "Done already"})
+    decs["force-with-lease"]["options"].append({"id": "agents", "label": "Let agents decide"})
+    errs = render.check(d)
+    assert not errs, errs
+    return d
+
+
 class RadioClicksAreSaved(unittest.TestCase):
     def test_every_radio_click_writes(self):
         node, env = _node_env()
@@ -39,7 +53,10 @@ class RadioClicksAreSaved(unittest.TestCase):
             stack, chantier = os.path.join(tmp, "stack.html"), os.path.join(tmp, "chantier.html")
             render.main(["--stack", "-o", stack])
             render.main([os.path.join(SKILL, "assets", "example.chantier.json"), "-o", chantier])
-            r = subprocess.run([node, os.path.join(HERE, "browser_save.js"), stack, chantier],
+            owner = os.path.join(tmp, "owner.html")
+            with open(owner, "w", encoding="utf-8") as f:
+                f.write(render.page(owner_steps_chantier()))
+            r = subprocess.run([node, os.path.join(HERE, "browser_save.js"), stack, chantier, owner],
                                env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 

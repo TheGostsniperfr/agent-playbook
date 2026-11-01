@@ -32,3 +32,18 @@
   without Node and Playwright) for saves, "Not saved" display, the snapshot race and re-render
   replay. New rules: a render error never swallows a save; local edits win until saved; render
   only on real changes; animations never on re-render.
+
+## 1.2.0 (2026-11-01)
+- Owner actions come with "Copy prompt for Claude Code" (from the live Arffornia stack). A
+  `localPrompt: {intro, steps{<decision id>: how}, extra?, outro?, language?}` on a stack card or
+  a chantier page becomes a ready-to-paste prompt: intro, context, one line per decision not
+  marked Done or "Let agents…" with the owner's choice, Other text and how, links, notes, and
+  fixed safety rules (no force-push, no secrets printed, ask before destructive or production
+  actions, Vault only through Terraform, final summary in the owner's language with links).
+  Clipboard first, selectable textarea when the frame refuses it.
+- New rule: every owner-action card must ship a `localPrompt`. `render.py` (page check and
+  `--lint-card`) refuses an owner-action page or card without one, steps keyed by unknown
+  decisions, empty steps and obviously unsafe commands (force-push, `-auto-approve`,
+  `--no-verify`, deleting a home or root folder).
+- Browser tests: the copy prompt includes non-Done decisions with the chosen option, excludes
+  Done / "Let agents…" ones, and the textarea fallback shows when the clipboard is refused or missing.

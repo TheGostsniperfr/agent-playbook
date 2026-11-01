@@ -10,6 +10,9 @@
 .pipe .saved.ok{color:var(--belt-accent)}
 .vbtns{display:flex;flex-wrap:wrap;gap:8px}
 .copybox{width:100%;min-height:120px;margin-top:8px;font-family:var(--f-mono);font-size:12.5px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px}
+.cc{display:flex;flex-direction:column;gap:8px;align-items:flex-start;background:var(--sunk);border-radius:10px;padding:12px 14px}
+.cc p{margin:0;font-size:14px;color:var(--muted)}
+.cc .copybox{min-height:160px}
 .banner{background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:14.5px}
 </style>
 
@@ -89,6 +92,48 @@
     function fallback() { box.hidden = false; box.focus(); box.select(); status(st, "", "Select all and copy."); }
     try {
       navigator.clipboard.writeText(text).then(function () { status(st, "ok", "Copied"); }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  // Copy prompt for Claude Code (DATA.localPrompt): the owner-only actions as a ready-to-paste
+  // prompt. Decisions marked Done or left to the agents are skipped; safety rules always close it.
+  var SKIP = /^(done|let agents)/i;
+  function safetyRules(text, lp) {
+    var r = ["never force-push", "never print, log or paste a secret, token or password", "ask me before anything destructive (delete, overwrite, rotate, revoke) or anything that touches production"];
+    if (/\bvault\b/i.test(text)) r.push("change Vault only through Terraform, never by hand");
+    return "Rules: " + r.join("; ") + ". At the end, give me a short summary " + (lp.language ? "in " + lp.language : "in the language I write to you in") + " of what you did and what is left, with full links.";
+  }
+  function buildPrompt() {
+    var lp = DATA.localPrompt || {}, a = all(), out = [], steps = [];
+    out.push(lp.intro || ("Task from my review page: " + DATA.title + "."));
+    out.push("Context: " + DATA.summary);
+    DATA.decisions.forEach(function (d) {
+      var v = a[d.id], label = v.choice;
+      d.options.forEach(function (o) { if (o.id === v.choice) label = o.label; });
+      if (SKIP.test(label || "")) return;
+      var line = "- " + d.title + " (my choice: " + (v.choice === "other" ? "Other" + (v.text ? ": " + v.text : "") : label + (v.text ? "; note: " + v.text : "")) + ")";
+      var how = (lp.steps || {})[d.id];
+      if (how) line += "\n  How: " + how;
+      steps.push(line);
+    });
+    (lp.extra || []).forEach(function (x) { steps.push("- " + x); });
+    if (steps.length) out.push("Do these, in order, asking me before anything destructive or that touches production:\n" + steps.join("\n"));
+    else out.push("Everything on this page is marked Done or left to the agents: just verify it and report.");
+    var links = DATA.merge.filter(function (m) { return /^https:\/\//.test(m.url || ""); }).map(function (m) { return "- " + m.title + ": " + m.url; });
+    if (links.length) out.push("Links:\n" + links.join("\n"));
+    var note = $("v-note").value.trim();
+    if (note) out.push("My notes: " + note);
+    if (lp.outro) out.push(lp.outro);
+    out.push(safetyRules(out.join("\n"), lp));
+    return out.join("\n\n");
+  }
+  if ($("cc-copy")) $("cc-copy").addEventListener("click", function () {
+    var text = buildPrompt(), box = $("cc-text"), st = $("cc-status");
+    box.value = text;
+    // fallback: clipboard missing or refused (frame permissions) -> show the text, selected
+    function fallback() { box.hidden = false; box.focus(); box.select(); status(st, "", "Select all and copy the text below."); }
+    try {
+      navigator.clipboard.writeText(text).then(function () { box.hidden = true; status(st, "ok", "Copied, paste it into Claude Code"); }, fallback);
     } catch (e) { fallback(); }
   });
 

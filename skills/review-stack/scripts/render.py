@@ -102,6 +102,39 @@ def jargon(text, context):
     return out
 
 
+# Steps of a localPrompt run on the owner's machine: refuse the obviously unsafe ones.
+UNSAFE = (
+    (re.compile(r"\bpush\b[^\n]*(\s-f\b|--force)"), "force-push"),
+    (re.compile(r"--no-verify\b"), "skipping hooks (--no-verify)"),
+    (re.compile(r"-auto-approve\b"), "applying without showing the plan (-auto-approve)"),
+    (re.compile(r"\brm\s+-[a-z]*r[a-z]*f?\s+(/|~|\$HOME)(\s|$)"), "deleting a home or root folder"),
+)
+SKIP_CHOICE = re.compile(r"^(done|let agents)", re.I)
+
+
+def lint_local_prompt(lp, decision_ids, where, schema=None):
+    """localPrompt: well formed, keyed by real decisions, concrete and safe by default."""
+    if schema is None:
+        with open(SCHEMA, encoding="utf-8") as f:
+            schema = json.load(f)
+    errs = validate(lp, schema["$defs"]["localPrompt"], schema, where)
+    if errs:
+        return errs
+    steps = lp.get("steps") or {}
+    if not steps and not lp.get("extra"):
+        errs.append("%s: give at least one step or extra line" % where)
+    for k, v in steps.items():
+        if k not in decision_ids:
+            errs.append("%s.steps.%s: not a decision id (%s)" % (where, k, ", ".join(sorted(decision_ids)) or "none"))
+        if not isinstance(v, str) or len(v.strip()) < 10:
+            errs.append("%s.steps.%s: say how, as a concrete command or click path" % (where, k))
+    for i, text in enumerate(list(steps.values()) + list(lp.get("extra") or [])):
+        for rx, what in UNSAFE:
+            if isinstance(text, str) and rx.search(text):
+                errs.append("%s: step %d is not safe by default (%s); make the owner choose it explicitly" % (where, i + 1, what))
+    return errs
+
+
 def semantic(data):
     errs = []
     ids = [d["id"] for d in data.get("decisions", [])]
@@ -118,6 +151,12 @@ def semantic(data):
         text = " ".join([d.get("title", ""), d.get("context", ""), d.get("why", "")] + [o.get("label", "") + " " + o.get("detail", "") for o in d.get("options", [])])
         for term in jargon(text, d.get("context", "")):
             errs.append("$.decisions[%d]: explain %r in plain words in the context (what it is, why it matters), e.g. '%s means ...'" % (i, term, term))
+    owner = [m["title"] for m in data.get("merge", []) if m.get("status") == "you"] + [
+        o["label"] for d in data.get("decisions", []) for o in d.get("options", []) if SKIP_CHOICE.match(o.get("label", ""))]
+    if data.get("localPrompt"):
+        errs += lint_local_prompt(data["localPrompt"], set(ids), "$.localPrompt")
+    elif owner:
+        errs.append("$.localPrompt: required, the page has owner actions (%s); ship the steps so the owner never retypes them" % owner[0])
     acc = data.get("accent")
     if acc and not data.get("title", "").endswith(acc):
         errs.append("$.accent: must be the end of the title")
@@ -149,6 +188,12 @@ def lint_card(card):
         text = " ".join([d.get("q", ""), d.get("why", "")] + list(d.get("options") or []))
         for term in jargon(text, d.get("why", "")):
             errs.append("%s: explain %r in plain words in why" % (where, term))
+    decs = card.get("decisions") or []
+    owner = [o for d in decs for o in (d.get("options") or []) if SKIP_CHOICE.match(str(o))]
+    if card.get("localPrompt"):
+        errs += lint_local_prompt(card["localPrompt"], {d.get("id") for d in decs}, "card.localPrompt")
+    elif owner:
+        errs.append("card: localPrompt required, the card has owner actions; ship the steps so the owner never retypes them")
     return errs
 
 
@@ -227,6 +272,13 @@ def body_html(d):
     out.append('<section><div class="section-head"><div class="eyebrow">Proof</div><h2>Verified, and not yet</h2></div>'
                '<div class="gaps">%s%s</div></section>' % (gaps(d["verified"], " ok"), gaps(d["not_verified"], "")))
 
+    if d.get("localPrompt"):
+        out.append('<section id="local"><div class="section-head"><div class="eyebrow">Do it locally</div><h2>Your part, as a prompt</h2>'
+                   '<p>Some steps only you can do. Your local Claude Code can do them for you: the prompt carries your choices and notes, '
+                   'and skips what you marked Done or left to the agents.</p></div><div class="cc">'
+                   '<button class="btn primary" type="button" id="cc-copy" data-copy="chantier">Copy prompt for Claude Code</button>'
+                   '<span class="saved" id="cc-status" aria-live="polite"></span>'
+                   '<textarea id="cc-text" class="copybox" readonly hidden aria-label="Prompt for Claude Code"></textarea></div></section>')
     out.append('<section class="pipe" id="verdict"><div><div class="eyebrow">Verdict</div><h2>Approve the chantier</h2>'
                '<p>Approving records your answers above (defaults included) for the orchestrator, which then merges in order. '
                'Nothing merges before that.</p></div><div class="flow verdict">'
