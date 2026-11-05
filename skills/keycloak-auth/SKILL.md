@@ -3,7 +3,7 @@ name: keycloak-auth
 description: "Set up or upgrade a Keycloak (26.x) deployment to state-of-the-art sign-in: passkeys first (1Password, platform, YubiKey), password plus second factor as fallback, recovery codes, realm-wide flow with RBAC, long sessions with step-up, a hardened master realm, and a branded Keycloakify login and account theme with light and dark mode. Terraform (keycloak/keycloak provider) for every realm setting. Use when deploying a new Keycloak, auditing an existing realm, adding passkeys or MFA, building or fixing a Keycloakify theme, or when asked how a login flow should work."
 compatibility: "Keycloak 26.4 or later (passkeys supported). Terraform provider keycloak/keycloak 5.8.0 or later. Keycloakify 11 for themes. Docker and Playwright for the local test."
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   author: "Brian Perret"
 ---
 
