@@ -43,6 +43,7 @@ and a CI drift check.
 | [`new-project`](skills/new-project/SKILL.md) | From an idea to a first milestone, then bootstrap |
 | [`propose-skill`](skills/propose-skill/SKILL.md) | "Done twice -> skill": detect repeated work and propose a skill in the right layer |
 | [`cross-repo-issue`](skills/cross-repo-issue/SKILL.md) | File an issue on another project's repo with a `from: <project>` label |
+| [`keycloak-auth`](skills/keycloak-auth/SKILL.md) | Keycloak sign-in done right: passkeys first, Terraform flows, Keycloakify login and account theme, local end-to-end test |
 | [`review-stack`](skills/review-stack/SKILL.md) | Chantier review page (PRs in merge order, decisions with defaults and "Other", proof), answers stored in the artifact database, and the review stack page |
 | [`artifact-style`](skills/artifact-style/SKILL.md) | The Agent Kit v2 visual style for HTML pages: tokens, type pairing, components, light and dark |
 | [`github-profile-page`](skills/github-profile-page/SKILL.md) | GitHub org or user profile: animated theme-aware SVG banner, live stats card, README |
