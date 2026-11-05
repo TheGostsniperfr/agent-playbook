@@ -251,13 +251,13 @@ Pitfalls met:
   `CONFIGURE_TOTP` required action enrolls the user before the session opens.
 - **Per-client `authentication_flow_binding_overrides`**: every client without one silently
   uses the built-in flow. Bind at realm level and drop the overrides.
-- **Removing \`authentication_flow_binding_overrides\` from a client does not clear it** in
+- **Removing `authentication_flow_binding_overrides` from a client does not clear it** in
   Keycloak: the provider sends nothing, the override stays, and deleting the old flow in the
-  same apply fails with \`500 unknown_error\` (server log: "Cannot remove authentication flow, it
+  same apply fails with `500 unknown_error` (server log: "Cannot remove authentication flow, it
   is currently in use"). Terraform also deletes the flow before updating the clients, since
   nothing links them any more. Clear the override first, then apply:
-  \`kcadm.sh update clients/<id> -r <realm> -s 'authenticationFlowBindingOverrides.browser=""'\`
-  (or \`browser_id = ""\` for one targeted apply; leaving that block in causes a permanent diff).
+  `kcadm.sh update clients/<id> -r <realm> -s 'authenticationFlowBindingOverrides.browser=""'`
+  (or `browser_id = ""` for one targeted apply; leaving that block in causes a permanent diff).
 - Rollout: keep the old flow, bind the new one to one client first, test, then switch.
 
 ## Master realm: security key on the admin console
